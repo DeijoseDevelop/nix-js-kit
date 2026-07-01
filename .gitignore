@@ -31,3 +31,6 @@ coverage/
 
 # Example output
 example/dist/
+
+# Pack artifacts
+*.tgz
