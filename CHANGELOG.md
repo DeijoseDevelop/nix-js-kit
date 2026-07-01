@@ -2,6 +2,14 @@
 
 All notable changes to `@deijose/nix-js-kit` will be documented in this file.
 
+## 0.2.0
+
+### Added
+
+- `scanRoutes` — file-based route scanner that maps `src/app/page.ts` to URL paths, including dynamic segments (`[slug]`, `[...slug]`).
+- `build` — SSG orchestrator that scans `src/app/`, runs loaders, composes layout chains, renders pages, and writes static HTML.
+- Example app with two pages (`/`, `/about`) sharing a root layout.
+
 ## 0.1.0
 
 ### Added

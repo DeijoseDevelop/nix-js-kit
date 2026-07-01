@@ -60,6 +60,8 @@ At build time, `nix-kit` runs the loader and renders the page to static HTML usi
 ## Core features (v0.1)
 
 - **Static site generation (SSG)** from `src/app/` file conventions.
+- **File-based route scanner** — maps `page.ts` files to URLs.
+- **Layout chain** — nested `layout.ts` files wrap pages automatically.
 - **`renderToString` for Nix.js templates** without touching the Nix.js core.
 - **Happy DOM** as a build-time dependency only — the Nix.js client bundle stays dependency-free.
 - **Document shell** with serialized loader data (`<script id="nix-data">`).
@@ -102,6 +104,31 @@ const html = documentShell({
   clientEntry: "/_nix/entry-client.js",
 });
 ```
+
+### `build(config)`
+
+Scans `src/app/` and generates the full static site in `dist/`.
+
+```ts
+import { build } from "@deijose/nix-js-kit";
+
+await build({
+  appDir: "./src/app",
+  outDir: "./dist",
+  clientEntry: "/_nix/entry-client.js",
+});
+```
+
+The scanner recognizes:
+
+| File | URL | Notes |
+| --- | --- | --- |
+| `src/app/page.ts` | `/` | Home page |
+| `src/app/about/page.ts` | `/about` | Static page |
+| `src/app/blog/[slug]/page.ts` | `/blog/:slug` | Dynamic route (needs `generateStaticParams` in v0.2) |
+| `src/app/[...slug]/page.ts` | `/:slug*` | Catch-all route |
+| `src/app/layout.ts` | all children | Root layout |
+| `src/app/blog/layout.ts` | `/blog/*` | Nested layout |
 
 ## Project conventions
 
