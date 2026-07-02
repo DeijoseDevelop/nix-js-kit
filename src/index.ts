@@ -8,6 +8,7 @@ export type {
   LayoutProps,
   LoadContext,
   PageDataLoad,
+  GenerateStaticParams,
 } from "./types";
 
 export { renderToString } from "./render/render-to-string";

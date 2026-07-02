@@ -2,6 +2,19 @@
 
 All notable changes to `@deijose/nix-js-kit` will be documented in this file.
 
+## 0.4.0
+
+### Added
+
+- `generateStaticParams` export for dynamic routes (`[slug]`) and catch-all routes (`[...slug]`).
+- Dynamic routes with `generateStaticParams` are now rendered to static HTML during SSG instead of being skipped.
+- `GenerateStaticParams` type exported from the public API.
+- Added `example/src/app/blog/[slug]` demonstrating a generated blog post route.
+
+### Changed
+
+- Updated `tsconfig.json` with `paths` mapping so examples can import from `@deijose/nix-js-kit` during development and typechecking.
+
 ## 0.3.1
 
 ### Changed

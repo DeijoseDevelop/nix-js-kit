@@ -5,7 +5,7 @@ import { documentShell } from "./document-shell";
 import { scanRoutes, type PageRoute, type ScannedRoutes } from "../router/route-scanner";
 import { scanIslands, type IslandModule } from "../island/scan";
 import { generateClientEntry } from "../island/generate-entry";
-import type { PageProps, PageDataLoad } from "../types";
+import type { PageProps, PageDataLoad, RouteParams, GenerateStaticParams } from "../types";
 
 // =============================================================================
 // --- SSG build orchestrator ---
@@ -63,18 +63,27 @@ function urlToFilePath(outDir: string, urlPath: string): string {
     return join(outDir, "index.html");
   }
 
-  // Replace dynamic segments with their literal placeholder for SSG templates.
-  // E.g. /blog/:slug -> /blog/[slug]/index.html
-  const segments = urlPath
-    .slice(1)
-    .split("/")
-    .map((seg) => seg.replace(/:([^/]+)/g, "[$1]"));
-
+  const segments = urlPath.slice(1).split("/");
   return join(outDir, ...segments, "index.html");
 }
 
 function isDynamic(path: string): boolean {
   return path.includes(":");
+}
+
+function buildConcreteUrl(path: string, params: RouteParams): string {
+  return path.replace(/:([a-zA-Z0-9_]+)(\*)?/g, (_, name, catchAll) => {
+    const value = params[name];
+    if (value === undefined || value === null) {
+      throw new Error(
+        `Missing value for dynamic segment "${name}" in path "${path}"`,
+      );
+    }
+    if (catchAll) {
+      return Array.isArray(value) ? value.join("/") : String(value);
+    }
+    return String(value);
+  });
 }
 
 /**
@@ -102,20 +111,58 @@ export async function build(config: BuildConfig): Promise<BuildResult> {
   }
 
   for (const route of routes.pages) {
-    if (isDynamic(route.path)) {
-      result.skipped.push(route.path);
+    if (!isDynamic(route.path)) {
+      const filePath = await buildPage(config, route);
+      result.pages++;
+      result.files.push(filePath);
       continue;
     }
 
-    const filePath = await buildPage(config, route);
-    result.pages++;
-    result.files.push(filePath);
+    const dynamicFiles = await buildDynamicPages(config, route);
+    if (dynamicFiles.length === 0) {
+      result.skipped.push(route.path);
+    } else {
+      result.pages += dynamicFiles.length;
+      result.files.push(...dynamicFiles);
+    }
   }
 
   return result;
 }
 
 async function buildPage(config: BuildConfig, route: PageRoute): Promise<string> {
+  return buildConcretePage(config, route, {});
+}
+
+async function buildDynamicPages(
+  config: BuildConfig,
+  route: PageRoute,
+): Promise<string[]> {
+  const { generateStaticParams } = (await import(
+    route.pagePath
+  )) as { generateStaticParams?: GenerateStaticParams };
+
+  if (!generateStaticParams) {
+    return [];
+  }
+
+  const paramList = await generateStaticParams();
+  if (!Array.isArray(paramList) || paramList.length === 0) {
+    return [];
+  }
+
+  const files: string[] = [];
+  for (const params of paramList) {
+    files.push(await buildConcretePage(config, route, params));
+  }
+  return files;
+}
+
+async function buildConcretePage(
+  config: BuildConfig,
+  route: PageRoute,
+  params: RouteParams,
+): Promise<string> {
   const { default: PageComponent } = await import(route.pagePath);
 
   let data: unknown;
@@ -123,7 +170,7 @@ async function buildPage(config: BuildConfig, route: PageRoute): Promise<string>
     const { load } = await import(route.dataPath) as { load?: PageDataLoad };
     if (load) {
       data = await load({
-        params: {},
+        params,
         searchParams: new URLSearchParams(),
       });
     }
@@ -131,7 +178,7 @@ async function buildPage(config: BuildConfig, route: PageRoute): Promise<string>
 
   const props: PageProps<unknown> = {
     data: data ?? {},
-    params: {},
+    params,
     searchParams: new URLSearchParams(),
   };
 
@@ -161,7 +208,8 @@ async function buildPage(config: BuildConfig, route: PageRoute): Promise<string>
     clientEntry: config.clientEntry,
   });
 
-  const filePath = urlToFilePath(config.outDir, route.path);
+  const urlPath = isDynamic(route.path) ? buildConcreteUrl(route.path, params) : route.path;
+  const filePath = urlToFilePath(config.outDir, urlPath);
   await mkdir(dirname(filePath), { recursive: true });
   await writeFile(filePath, htmlOut, "utf8");
 

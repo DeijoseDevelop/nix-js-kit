@@ -38,3 +38,8 @@ export interface LoadContext {
 export type PageDataLoad<TData = unknown> = (
   ctx: LoadContext,
 ) => Promise<TData> | TData;
+
+/** Signature for `generateStaticParams` in dynamic page modules. */
+export type GenerateStaticParams = () =>
+  | Promise<RouteParams[]>
+  | RouteParams[];

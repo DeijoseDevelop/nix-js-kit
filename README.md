@@ -94,17 +94,18 @@ Options:
 | `--hydrate-import <spec>` | `@deijose/nix-js-kit/island` | Import path for `hydrateIslands` in generated entry |
 | `--client-config <path>` | — | Vite config used to build the client bundle in dev mode |
 
-## Core features (v0.3)
+## Core features (v0.4)
 
 - **Static site generation (SSG)** from `src/app/` file conventions.
 - **File-based route scanner** — maps `page.ts` files to URLs.
+- **Dynamic routes** with `generateStaticParams` — generate static HTML for `[slug]` and `[...slug]` routes.
 - **Layout chain** — nested `layout.ts` files wrap pages automatically.
 - **`renderToString` for Nix.js templates** without touching the Nix.js core.
 - **Happy DOM** as a build-time dependency only — the Nix.js client bundle stays dependency-free.
 - **Islands** via `island()` helper — mark interactive components and hydrate them on the client with `hydrateIslands`.
 - **Auto island scan** — `build()` scans `src/islands/` and generates the client hydration entry for you.
 - **Document shell** with serialized loader data (`<script id="nix-data">`).
-- **CLI** (`nix-kit build` / `nix-kit dev`) with dev server and rebuild-on-change.
+- **CLI** (`nix-js-kit build` / `nix-js-kit dev`) with dev server and rebuild-on-change.
 
 ## Roadmap
 
@@ -113,8 +114,9 @@ Options:
 | v0.1 | SSG + file-based routing |
 | v0.2 | Islands, data loading, actions, API routes |
 | v0.3 | CLI + dev server |
-| v0.4 | SSR runtime + adapters |
-| v0.5 | Generators, type-safe `PageProps` |
+| v0.4 | `generateStaticParams`, route groups, preview server |
+| v0.5 | SSR runtime + adapters |
+| v0.6 | Vite plugin, type-safe `PageProps`, islands DX |
 
 See the full architecture proposal in `docs/nix-js-kit-propuesta-implementacion.md`.
 
@@ -228,10 +230,59 @@ The scanner recognizes:
 | --- | --- | --- |
 | `src/app/page.ts` | `/` | Home page |
 | `src/app/about/page.ts` | `/about` | Static page |
-| `src/app/blog/[slug]/page.ts` | `/blog/:slug` | Dynamic route (needs `generateStaticParams` in v0.2) |
-| `src/app/[...slug]/page.ts` | `/:slug*` | Catch-all route |
+| `src/app/blog/[slug]/page.ts` | `/blog/:slug` | Dynamic route (requires `generateStaticParams`) |
+| `src/app/[...slug]/page.ts` | `/:slug*` | Catch-all route (requires `generateStaticParams`) |
 | `src/app/layout.ts` | all children | Root layout |
 | `src/app/blog/layout.ts` | `/blog/*` | Nested layout |
+
+### Dynamic routes with `generateStaticParams`
+
+Dynamic routes are skipped during SSG unless the page exports a
+`generateStaticParams` function. It returns an array of param objects, one per
+static HTML file to generate:
+
+```ts
+// src/app/blog/[slug]/page.ts
+import { html } from "@deijose/nix-js";
+import type { PageProps, GenerateStaticParams } from "@deijose/nix-js-kit";
+
+export const generateStaticParams: GenerateStaticParams = async () => {
+  return [{ slug: "hello-world" }, { slug: "nix-js-kit" }];
+};
+
+export default function BlogPostPage({ data, params }: PageProps) {
+  return html`
+    <article>
+      <h1>${data.title}</h1>
+      <p>Slug: ${params.slug}</p>
+    </article>
+  `;
+}
+```
+
+```ts
+// src/app/blog/[slug]/page.data.ts
+import type { PageDataLoad } from "@deijose/nix-js-kit";
+
+export const load: PageDataLoad = async ({ params }) => {
+  return { title: `Post: ${params.slug}` };
+};
+```
+
+Running `nix-js-kit build` then produces:
+
+```
+dist/blog/hello-world/index.html
+dist/blog/nix-js-kit/index.html
+```
+
+Catch-all routes use a string array for the spread param:
+
+```ts
+export const generateStaticParams = async () => {
+  return [{ slug: ["docs", "intro"] }]; // -> /docs/intro
+};
+```
 
 ### Auto island scan
 

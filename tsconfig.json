@@ -10,6 +10,18 @@
     "skipLibCheck": true,
     "moduleResolution": "bundler",
     "allowImportingTsExtensions": true,
+    "baseUrl": ".",
+    "paths": {
+      "@deijose/nix-js-kit": [
+        "./src/index.ts"
+      ],
+      "@deijose/nix-js-kit/island": [
+        "./src/island/index.ts"
+      ],
+      "@deijose/nix-js-kit/cli": [
+        "./src/cli.ts"
+      ]
+    },
     "verbatimModuleSyntax": true,
     "moduleDetection": "force",
     "noEmit": true,
