@@ -55,21 +55,21 @@ export default function HomePage({ data }: PageProps<{ title: string }>) {
 }
 ```
 
-At build time, `nix-kit` runs the loader and renders the page to static HTML using `renderToString`.
+At build time, `nix-js-kit` runs the loader and renders the page to static HTML using `renderToString`.
 
 ## CLI
 
-After installing, the `nix-kit` binary is available in your project:
+After installing, the `nix-js-kit` binary is available in your project:
 
 ```bash
-nix-kit build
-nix-kit dev
+nix-js-kit build
+nix-js-kit dev
 ```
 
 By default it looks for `src/app/` and `src/islands/` and writes to `dist/`:
 
 ```bash
-nix-kit build
+nix-js-kit build
 # → dist/index.html
 # → dist/_nix-js/entry-client.js   (after bundling the generated entry)
 ```
@@ -77,7 +77,7 @@ nix-kit build
 Run the dev server with rebuild-on-change:
 
 ```bash
-nix-kit dev --client-config vite.client.config.ts
+nix-js-kit dev --client-config vite.client.config.ts
 ```
 
 Options:
@@ -207,7 +207,7 @@ Directives:
 ### `build(config)`
 
 Scans `src/app/` and generates the full static site in `dist/`. You can call it
-from code or use the `nix-kit build` CLI (see [CLI](#cli)).
+from code or use the `nix-js-kit build` CLI (see [CLI](#cli)).
 
 ```ts
 import { build } from "@deijose/nix-js-kit";

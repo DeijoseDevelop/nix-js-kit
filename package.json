@@ -1,6 +1,6 @@
 {
   "name": "@deijose/nix-js-kit",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Full-stack meta-framework for Nix.js — file-based routing, SSG and islands.",
   "license": "MIT",
   "author": "Deiver Vasquez",
@@ -47,7 +47,7 @@
     "LICENSE"
   ],
   "bin": {
-    "nix-kit": "./bin/nix-kit.js"
+    "nix-js-kit": "./bin/nix-js-kit.js"
   },
   "sideEffects": false,
   "engines": {
@@ -57,7 +57,7 @@
     "poc": "bun run example/build.ts",
     "build:example": "bun run example/build.ts",
     "build:client": "vite build --config example/vite.client.config.ts",
-    "dev:example": "node bin/nix-kit.js dev --root example --hydrate-import ../../src/island/index.ts --client-config vite.client.config.ts",
+    "dev:example": "node bin/nix-js-kit.js dev --root example --hydrate-import ../../src/island/index.ts --client-config vite.client.config.ts",
     "typecheck": "tsc --noEmit",
     "build": "npm run build:lib",
     "build:lib": "vite build --config vite.lib.config.ts && vite build --config vite.cli.config.ts && tsc --project tsconfig.lib.json && terser dist/lib/index.js -c -m -o dist/lib/index.js && terser dist/lib/index.cjs -c -m -o dist/lib/index.cjs && terser dist/lib/island/index.js -c -m -o dist/lib/island/index.js && terser dist/lib/island/index.cjs -c -m -o dist/lib/island/index.cjs",

@@ -36,7 +36,7 @@ function collectMarkers(): IslandMarker[] {
 function hydrate(marker: IslandMarker, registry: IslandRegistry): void {
   const Component = registry[marker.name];
   if (!Component) {
-    console.warn(`[nix-kit] No island registered for "${marker.name}"`);
+    console.warn(`[nix-js-kit] No island registered for "${marker.name}"`);
     return;
   }
 

@@ -2,12 +2,19 @@
 
 All notable changes to `@deijose/nix-js-kit` will be documented in this file.
 
+## 0.3.1
+
+### Changed
+
+- Renamed CLI binary from `nix-kit` to `nix-js-kit` to avoid confusion with the Nix package manager.
+- Updated runtime warning prefix from `[nix-kit]` to `[nix-js-kit]`.
+
 ## 0.3.0
 
 ### Added
 
-- `nix-kit` CLI binary with `build` and `dev` commands.
-- Dev server (`nix-kit dev`) with rebuild-on-change for `src/app/` and `src/islands/`.
+- `nix-js-kit` CLI binary with `build` and `dev` commands.
+- Dev server (`nix-js-kit dev`) with rebuild-on-change for `src/app/` and `src/islands/`.
 - `--client-config` option to rebuild the client hydration bundle on each source change.
 - `run()` and `CliOptions` exported from `@deijose/nix-js-kit` for programmatic CLI usage.
 

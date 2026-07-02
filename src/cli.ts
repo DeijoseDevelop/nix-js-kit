@@ -10,8 +10,8 @@ import { build, type BuildConfig } from "./build/build";
 // =============================================================================
 //
 // Minimal command-line interface for Nix Kit. Supports:
-//   nix-kit build  — run a production static build
-//   nix-kit dev    — run a dev server that rebuilds on file changes
+//   nix-js-kit build  — run a production static build
+//   nix-js-kit dev    — run a dev server that rebuilds on file changes
 //
 // This is intentionally small: no generators, no config file parsing, just
 // convention-based defaults overridable via CLI flags.
@@ -44,7 +44,7 @@ function parseArgs(argv: string[]): CliOptions {
   }
   const command = args[0];
   if (command !== "build" && command !== "dev") {
-    throw new Error(`Usage: nix-kit <build|dev> [options]`);
+    throw new Error(`Usage: nix-js-kit <build|dev> [options]`);
   }
 
   let root = process.cwd();
@@ -133,7 +133,7 @@ function parseArgs(argv: string[]): CliOptions {
 
 function printHelp(): void {
   console.log(`
-nix-kit <command> [options]
+nix-js-kit <command> [options]
 
 Commands:
   build    Run a static site build

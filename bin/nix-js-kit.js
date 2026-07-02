@@ -12,13 +12,13 @@ const here = dirname(fileURLToPath(import.meta.url));
 const built = join(here, "../dist/lib/cli.js");
 
 if (!existsSync(built)) {
-  console.log("[nix-kit] dist/lib/cli.js not found, running npm run build:lib...");
+  console.log("[nix-js-kit] dist/lib/cli.js not found, running npm run build:lib...");
   const result = spawnSync("npm", ["run", "build:lib"], {
     stdio: "inherit",
     cwd: join(here, ".."),
   });
   if (result.status !== 0) {
-    console.error("[nix-kit] build:lib failed");
+    console.error("[nix-js-kit] build:lib failed");
     process.exit(result.status ?? 1);
   }
 }
