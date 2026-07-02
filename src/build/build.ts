@@ -3,6 +3,8 @@ import { join, dirname } from "node:path";
 import { renderToString } from "../render/render-to-string";
 import { documentShell } from "./document-shell";
 import { scanRoutes, type PageRoute, type ScannedRoutes } from "../router/route-scanner";
+import { scanIslands, type IslandModule } from "../island/scan";
+import { generateClientEntry } from "../island/generate-entry";
 import type { PageProps, PageDataLoad } from "../types";
 
 // =============================================================================
@@ -25,6 +27,22 @@ export interface BuildConfig {
   clientEntry?: string;
   /** Default language for the HTML shell. */
   lang?: string;
+  /**
+   * Absolute path to the islands directory (e.g. /project/src/islands).
+   * When set, `build` scans it and generates a client entry module listing
+   * every island so you don't have to maintain `entry-client.ts` by hand.
+   */
+  islandsDir?: string;
+  /**
+   * Absolute path where the generated client entry module is written
+   * (e.g. /project/.nix-js/entry-client.ts). Required when `islandsDir` is set.
+   */
+  generatedEntry?: string;
+  /**
+   * Import specifier the generated entry uses for `hydrateIslands`.
+   * Defaults to the published subpath `@deijose/nix-js-kit/island`.
+   */
+  hydrateImport?: string;
 }
 
 export interface BuildResult {
@@ -34,6 +52,10 @@ export interface BuildResult {
   skipped: string[];
   /** Absolute paths to the generated HTML files. */
   files: string[];
+  /** Islands discovered when `islandsDir` is set. */
+  islands: IslandModule[];
+  /** Absolute path to the generated client entry, if one was written. */
+  generatedEntry?: string;
 }
 
 function urlToFilePath(outDir: string, urlPath: string): string {
@@ -63,7 +85,21 @@ function isDynamic(path: string): boolean {
  */
 export async function build(config: BuildConfig): Promise<BuildResult> {
   const routes = await scanRoutes(config.appDir);
-  const result: BuildResult = { pages: 0, skipped: [], files: [] };
+  const result: BuildResult = { pages: 0, skipped: [], files: [], islands: [] };
+
+  // Scan islands and generate the client entry before rendering pages, so the
+  // hydration bundle stays in sync with what the app actually uses.
+  if (config.islandsDir) {
+    result.islands = await scanIslands(config.islandsDir);
+
+    if (config.generatedEntry) {
+      result.generatedEntry = await generateClientEntry({
+        islands: result.islands,
+        outFile: config.generatedEntry,
+        hydrateImport: config.hydrateImport,
+      });
+    }
+  }
 
   for (const route of routes.pages) {
     if (isDynamic(route.path)) {

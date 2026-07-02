@@ -2,6 +2,15 @@
 
 All notable changes to `@deijose/nix-js-kit` will be documented in this file.
 
+## 0.2.2
+
+### Added
+
+- `scanIslands()` — recursively scans an islands directory; each `.ts` file becomes an island named by its relative path.
+- `generateClientEntry()` / `buildEntrySource()` — generates the client hydration entry from scanned islands.
+- `build()` now accepts `islandsDir`, `generatedEntry`, and `hydrateImport`; `BuildResult` reports `islands` and `generatedEntry`.
+- Second example island (`Counter`) demonstrating multiple islands and the `visible` directive.
+
 ## 0.2.1
 
 ### Added

@@ -16,3 +16,9 @@ export { build, scanRoutes, type BuildConfig, type BuildResult } from "./build/b
 export type { PageRoute, ScannedRoutes, ApiRoute } from "./router/route-scanner";
 export { island, type IslandComponent, type IslandDirective } from "./island/island";
 export { hydrateIslands, type IslandRegistry } from "./island/hydrate";
+export { scanIslands, type IslandModule } from "./island/scan";
+export {
+  generateClientEntry,
+  buildEntrySource,
+  type GenerateEntryOptions,
+} from "./island/generate-entry";

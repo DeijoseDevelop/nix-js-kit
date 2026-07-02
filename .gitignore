@@ -32,5 +32,8 @@ coverage/
 # Example output
 example/dist/
 
+# Auto-generated client entry
+**/.nix-js/
+
 # Pack artifacts
 *.tgz
