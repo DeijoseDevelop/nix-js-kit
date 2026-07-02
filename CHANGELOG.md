@@ -2,6 +2,20 @@
 
 All notable changes to `@deijose/nix-js-kit` will be documented in this file.
 
+## 0.3.0
+
+### Added
+
+- `nix-kit` CLI binary with `build` and `dev` commands.
+- Dev server (`nix-kit dev`) with rebuild-on-change for `src/app/` and `src/islands/`.
+- `--client-config` option to rebuild the client hydration bundle on each source change.
+- `run()` and `CliOptions` exported from `@deijose/nix-js-kit` for programmatic CLI usage.
+
+### Changed
+
+- `build:lib` now produces a separate SSR build for `dist/lib/cli.js` so the CLI can import user `.ts` files at runtime.
+- Added `tsx` as a runtime dependency so the CLI can load user pages and islands without extra setup.
+
 ## 0.2.2
 
 ### Added

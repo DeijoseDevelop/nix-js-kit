@@ -39,6 +39,7 @@ export default defineConfig({
                     "@deijose/nix-js": "NixJS",
                     "happy-dom": "HappyDOM",
                 },
+                inlineDynamicImports: false,
             },
         },
     },

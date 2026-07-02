@@ -57,7 +57,44 @@ export default function HomePage({ data }: PageProps<{ title: string }>) {
 
 At build time, `nix-kit` runs the loader and renders the page to static HTML using `renderToString`.
 
-## Core features (v0.1)
+## CLI
+
+After installing, the `nix-kit` binary is available in your project:
+
+```bash
+nix-kit build
+nix-kit dev
+```
+
+By default it looks for `src/app/` and `src/islands/` and writes to `dist/`:
+
+```bash
+nix-kit build
+# → dist/index.html
+# → dist/_nix-js/entry-client.js   (after bundling the generated entry)
+```
+
+Run the dev server with rebuild-on-change:
+
+```bash
+nix-kit dev --client-config vite.client.config.ts
+```
+
+Options:
+
+| Flag | Default | Description |
+| --- | --- | --- |
+| `-r, --root <dir>` | `cwd` | Project root |
+| `-a, --app <dir>` | `src/app` | Pages directory relative to root |
+| `-i, --islands <dir>` | `src/islands` | Islands directory relative to root |
+| `-o, --out <dir>` | `dist` | Output directory relative to root |
+| `-p, --port <number>` | `3000` | Dev server port |
+| `-h, --host <address>` | `127.0.0.1` | Dev server host |
+| `-l, --lang <lang>` | `es` | HTML `lang` attribute |
+| `--hydrate-import <spec>` | `@deijose/nix-js-kit/island` | Import path for `hydrateIslands` in generated entry |
+| `--client-config <path>` | — | Vite config used to build the client bundle in dev mode |
+
+## Core features (v0.3)
 
 - **Static site generation (SSG)** from `src/app/` file conventions.
 - **File-based route scanner** — maps `page.ts` files to URLs.
@@ -67,15 +104,17 @@ At build time, `nix-kit` runs the loader and renders the page to static HTML usi
 - **Islands** via `island()` helper — mark interactive components and hydrate them on the client with `hydrateIslands`.
 - **Auto island scan** — `build()` scans `src/islands/` and generates the client hydration entry for you.
 - **Document shell** with serialized loader data (`<script id="nix-data">`).
+- **CLI** (`nix-kit build` / `nix-kit dev`) with dev server and rebuild-on-change.
 
 ## Roadmap
 
 | Version | Focus |
 | --- | --- |
-| v0.1 | SSG + file-based routing + dev server |
-| v0.2 | Islands (`client:`), data loading, actions, API routes |
-| v0.3 | SSR runtime + adapters |
-| v0.4 | CLI, generators, type-safe `PageProps` |
+| v0.1 | SSG + file-based routing |
+| v0.2 | Islands, data loading, actions, API routes |
+| v0.3 | CLI + dev server |
+| v0.4 | SSR runtime + adapters |
+| v0.5 | Generators, type-safe `PageProps` |
 
 See the full architecture proposal in `docs/nix-js-kit-propuesta-implementacion.md`.
 
@@ -167,7 +206,8 @@ Directives:
 
 ### `build(config)`
 
-Scans `src/app/` and generates the full static site in `dist/`.
+Scans `src/app/` and generates the full static site in `dist/`. You can call it
+from code or use the `nix-kit build` CLI (see [CLI](#cli)).
 
 ```ts
 import { build } from "@deijose/nix-js-kit";

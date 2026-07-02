@@ -22,3 +22,4 @@ export {
   buildEntrySource,
   type GenerateEntryOptions,
 } from "./island/generate-entry";
+export { run, type CliOptions } from "./cli";
