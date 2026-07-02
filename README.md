@@ -64,6 +64,7 @@ After installing, the `nix-js-kit` binary is available in your project:
 ```bash
 nix-js-kit build
 nix-js-kit dev
+nix-js-kit preview
 ```
 
 By default it looks for `src/app/` and `src/islands/` and writes to `dist/`:
@@ -80,6 +81,13 @@ Run the dev server with rebuild-on-change:
 nix-js-kit dev --client-config vite.client.config.ts
 ```
 
+Serve the production build:
+
+```bash
+nix-js-kit build
+nix-js-kit preview
+```
+
 Options:
 
 | Flag | Default | Description |
@@ -88,8 +96,8 @@ Options:
 | `-a, --app <dir>` | `src/app` | Pages directory relative to root |
 | `-i, --islands <dir>` | `src/islands` | Islands directory relative to root |
 | `-o, --out <dir>` | `dist` | Output directory relative to root |
-| `-p, --port <number>` | `3000` | Dev server port |
-| `-h, --host <address>` | `127.0.0.1` | Dev server host |
+| `-p, --port <number>` | `3000` | Server port |
+| `-h, --host <address>` | `127.0.0.1` | Server host |
 | `-l, --lang <lang>` | `es` | HTML `lang` attribute |
 | `--hydrate-import <spec>` | `@deijose/nix-js-kit/island` | Import path for `hydrateIslands` in generated entry |
 | `--client-config <path>` | — | Vite config used to build the client bundle in dev mode |
@@ -105,7 +113,7 @@ Options:
 - **Islands** via `island()` helper — mark interactive components and hydrate them on the client with `hydrateIslands`.
 - **Auto island scan** — `build()` scans `src/islands/` and generates the client hydration entry for you.
 - **Document shell** with serialized loader data (`<script id="nix-data">`).
-- **CLI** (`nix-js-kit build` / `nix-js-kit dev`) with dev server and rebuild-on-change.
+- **CLI** (`nix-js-kit build` / `nix-js-kit dev` / `nix-js-kit preview`) with dev server, rebuild-on-change and production preview server.
 
 ## Roadmap
 

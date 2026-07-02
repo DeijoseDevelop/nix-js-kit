@@ -2,6 +2,17 @@
 
 All notable changes to `@deijose/nix-js-kit` will be documented in this file.
 
+## 0.4.1
+
+### Added
+
+- `nix-js-kit preview` command to serve the static build in production mode.
+- Clean URL support for static files (e.g. `/about` → `/about/index.html`).
+
+### Changed
+
+- CLI help text and README updated to include the `preview` command.
+
 ## 0.4.0
 
 ### Added

@@ -1,4 +1,4 @@
-import { readFile } from "node:fs/promises";
+import { readFile, stat } from "node:fs/promises";
 import { createServer, type Server } from "node:http";
 import { extname, join, resolve, relative } from "node:path";
 import { watch } from "node:fs";
@@ -10,15 +10,16 @@ import { build, type BuildConfig } from "./build/build";
 // =============================================================================
 //
 // Minimal command-line interface for Nix Kit. Supports:
-//   nix-js-kit build  — run a production static build
-//   nix-js-kit dev    — run a dev server that rebuilds on file changes
+//   nix-js-kit build   — run a production static build
+//   nix-js-kit dev     — run a dev server that rebuilds on file changes
+//   nix-js-kit preview — serve the static build in production mode
 //
 // This is intentionally small: no generators, no config file parsing, just
 // convention-based defaults overridable via CLI flags.
 // =============================================================================
 
 export interface CliOptions {
-  command: "build" | "dev";
+  command: "build" | "dev" | "preview";
   root: string;
   appDir: string;
   islandsDir?: string;
@@ -43,8 +44,8 @@ function parseArgs(argv: string[]): CliOptions {
     process.exit(0);
   }
   const command = args[0];
-  if (command !== "build" && command !== "dev") {
-    throw new Error(`Usage: nix-js-kit <build|dev> [options]`);
+  if (command !== "build" && command !== "dev" && command !== "preview") {
+    throw new Error(`Usage: nix-js-kit <build|dev|preview> [options]`);
   }
 
   let root = process.cwd();
@@ -138,14 +139,15 @@ nix-js-kit <command> [options]
 Commands:
   build    Run a static site build
   dev      Run a development server with rebuild-on-change
+  preview  Serve the static build in production mode
 
 Options:
   -r, --root <dir>          Project root (default: cwd)
   -a, --app <dir>           App directory relative to root (default: src/app)
   -i, --islands <dir>       Islands directory relative to root (default: src/islands)
   -o, --out <dir>           Output directory relative to root (default: dist)
-  -p, --port <number>       Dev server port (default: 3000)
-  -h, --host <address>      Dev server host (default: 127.0.0.1)
+  -p, --port <number>       Server port (default: 3000)
+  -h, --host <address>      Server host (default: 127.0.0.1)
   -l, --lang <lang>         HTML lang attribute (default: es)
   --hydrate-import <spec>   Import specifier for hydrateIslands in generated entry
   --client-config <path>    Vite config used to build the client hydration bundle
@@ -200,6 +202,28 @@ async function doDev(options: CliOptions): Promise<void> {
   });
 
   watchFiles(options, server);
+}
+
+async function doPreview(options: CliOptions): Promise<void> {
+  try {
+    const s = await stat(options.outDir);
+    if (!s.isDirectory()) {
+      throw new Error(`Output path is not a directory: ${options.outDir}`);
+    }
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException).code;
+    if (code === "ENOENT") {
+      throw new Error(
+        `No build output found at ${options.outDir}. Run \`nix-js-kit build\` first.`,
+      );
+    }
+    throw err;
+  }
+
+  const server = createServer((req, res) => handleRequest(req, res, options));
+  server.listen(options.port, options.host, () => {
+    console.log(`\n  → Preview server http://${options.host}:${options.port}`);
+  });
 }
 
 function buildClient(options: CliOptions): void {
@@ -322,6 +346,8 @@ export async function run(argv: string[]): Promise<void> {
   const options = parseArgs(argv);
   if (options.command === "build") {
     await doBuild(options);
+  } else if (options.command === "preview") {
+    await doPreview(options);
   } else {
     await doDev(options);
   }
