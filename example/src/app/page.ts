@@ -1,10 +1,10 @@
-import { html, signal } from "@deijose/nix-js";
+import { html } from "@deijose/nix-js";
+import { island } from "../../../src/index.ts";
 import type { PageProps } from "../../../src/index.ts";
+import LikeButton from "../islands/LikeButton.ts";
 import type { HomeData } from "./page.data.ts";
 
 export default function HomePage({ data }: PageProps<HomeData>) {
-  const liked = signal(false);
-
   return html`
     <article class="home">
       <h1>${data.title}</h1>
@@ -12,9 +12,7 @@ export default function HomePage({ data }: PageProps<HomeData>) {
       <ul>
         ${data.features.map((f) => html`<li>${f}</li>`)}
       </ul>
-      <button @click=${() => (liked.value = !liked.value)}>
-        ${() => (liked.value ? "★ Liked" : "☆ Like")}
-      </button>
+      ${island("LikeButton", LikeButton, { postId: "home-1" }, "load")}
     </article>
   `;
 }

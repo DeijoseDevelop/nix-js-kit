@@ -2,6 +2,15 @@
 
 All notable changes to `@deijose/nix-js-kit` will be documented in this file.
 
+## 0.2.1
+
+### Added
+
+- `island()` helper — marks interactive components with `data-nix-island` markers during SSG.
+- `hydrateIslands()` — client-side hydration registry with `load`, `idle`, and `visible` directives.
+- `example/src/islands/` + `example/src/entry-client.ts` demonstrating a `LikeButton` island.
+- `./island` subpath export so client bundles don't pull server-only code.
+
 ## 0.2.0
 
 ### Added

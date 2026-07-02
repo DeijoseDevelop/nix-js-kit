@@ -64,6 +64,7 @@ At build time, `nix-kit` runs the loader and renders the page to static HTML usi
 - **Layout chain** — nested `layout.ts` files wrap pages automatically.
 - **`renderToString` for Nix.js templates** without touching the Nix.js core.
 - **Happy DOM** as a build-time dependency only — the Nix.js client bundle stays dependency-free.
+- **Islands** via `island()` helper — mark interactive components and hydrate them on the client with `hydrateIslands`.
 - **Document shell** with serialized loader data (`<script id="nix-data">`).
 
 ## Roadmap
@@ -101,9 +102,62 @@ const html = documentShell({
   title: "My Page",
   body,
   data: { title: "My Page" },
-  clientEntry: "/_nix/entry-client.js",
+  clientEntry: "/_nix-js/entry-client.js",
 });
 ```
+
+### Islands
+
+Create an interactive component in `src/islands/`:
+
+```ts
+// src/islands/LikeButton.ts
+import { html, signal } from "@deijose/nix-js";
+
+export default function LikeButton({ postId }: { postId: string }) {
+  const liked = signal(false);
+  return html`
+    <button @click=${() => (liked.value = !liked.value)}>
+      ${() => (liked.value ? "★ Liked" : "☆ Like")}
+    </button>
+  `;
+}
+```
+
+Mark it as an island in a page:
+
+```ts
+// src/app/page.ts
+import { html, island } from "@deijose/nix-js-kit";
+import LikeButton from "../islands/LikeButton";
+
+export default function HomePage() {
+  return html`
+    <article>
+      <h1>Hello</h1>
+      ${island("LikeButton", LikeButton, { postId: "123" }, "load")}
+    </article>
+  `;
+}
+```
+
+Hydrate it on the client:
+
+```ts
+// src/entry-client.ts
+import { hydrateIslands } from "@deijose/nix-js-kit/island";
+import LikeButton from "./islands/LikeButton";
+
+hydrateIslands({ LikeButton });
+```
+
+Directives:
+
+| Directive | Hydration trigger |
+| --- | --- |
+| `load` | Immediately |
+| `idle` | `requestIdleCallback` |
+| `visible` | `IntersectionObserver` |
 
 ### `build(config)`
 
@@ -115,7 +169,7 @@ import { build } from "@deijose/nix-js-kit";
 await build({
   appDir: "./src/app",
   outDir: "./dist",
-  clientEntry: "/_nix/entry-client.js",
+  clientEntry: "/_nix-js/entry-client.js",
 });
 ```
 

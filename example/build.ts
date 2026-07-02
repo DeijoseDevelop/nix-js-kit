@@ -8,7 +8,7 @@ async function main(): Promise<void> {
   const result = await build({
     appDir: join(here, "src/app"),
     outDir: join(here, "dist"),
-    clientEntry: "/_nix/entry-client.js",
+    clientEntry: "/_nix-js/entry-client.js",
     lang: "es",
   });
 

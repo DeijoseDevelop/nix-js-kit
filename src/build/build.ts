@@ -21,7 +21,7 @@ export interface BuildConfig {
   appDir: string;
   /** Absolute path to the output directory (e.g. /project/dist). */
   outDir: string;
-  /** Base path for the client entry module, e.g. "/_nix/entry-client.js". */
+  /** Base path for the client entry module, e.g. "/_nix-js/entry-client.js". */
   clientEntry?: string;
   /** Default language for the HTML shell. */
   lang?: string;

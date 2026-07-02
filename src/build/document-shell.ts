@@ -16,7 +16,7 @@ export interface ShellOptions {
   lang?: string;
   /** Loader data serialized into `<script id="nix-data">`. */
   data?: unknown;
-  /** Path to the client entry module, e.g. `/_nix/entry-client.js`. */
+  /** Path to the client entry module, e.g. `/_nix-js/entry-client.js`. */
   clientEntry?: string;
 }
 
