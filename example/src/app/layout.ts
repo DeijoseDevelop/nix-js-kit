@@ -7,6 +7,8 @@ export default function RootLayout({ children }: LayoutProps) {
       <header>
         <a href="/">Home</a>
         <a href="/about">About</a>
+        <a href="/pricing">Pricing</a>
+        <a href="/features">Features</a>
       </header>
       <main>${children}</main>
       <footer>Nix Kit v0.1</footer>

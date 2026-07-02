@@ -2,6 +2,17 @@
 
 All notable changes to `@deijose/nix-js-kit` will be documented in this file.
 
+## 0.4.2
+
+### Added
+
+- Route groups `(marketing)` support: folders wrapped in parentheses are ignored in the URL path but can provide a shared `layout.ts`.
+- Added `example/src/app/(marketing)/` with `pricing` and `features` pages demonstrating route groups.
+
+### Fixed
+
+- Route scanner now reads `layout.ts` from inside the route group directory instead of the parent directory.
+
 ## 0.4.1
 
 ### Added

@@ -107,6 +107,7 @@ Options:
 - **Static site generation (SSG)** from `src/app/` file conventions.
 - **File-based route scanner** — maps `page.ts` files to URLs.
 - **Dynamic routes** with `generateStaticParams` — generate static HTML for `[slug]` and `[...slug]` routes.
+- **Route groups** `(marketing)` — shared layouts without affecting the URL path.
 - **Layout chain** — nested `layout.ts` files wrap pages automatically.
 - **`renderToString` for Nix.js templates** without touching the Nix.js core.
 - **Happy DOM** as a build-time dependency only — the Nix.js client bundle stays dependency-free.
@@ -240,8 +241,10 @@ The scanner recognizes:
 | `src/app/about/page.ts` | `/about` | Static page |
 | `src/app/blog/[slug]/page.ts` | `/blog/:slug` | Dynamic route (requires `generateStaticParams`) |
 | `src/app/[...slug]/page.ts` | `/:slug*` | Catch-all route (requires `generateStaticParams`) |
+| `src/app/(marketing)/about/page.ts` | `/about` | Route group (ignored in URL, can add layout) |
 | `src/app/layout.ts` | all children | Root layout |
 | `src/app/blog/layout.ts` | `/blog/*` | Nested layout |
+| `src/app/(marketing)/layout.ts` | `/pricing`, `/features` | Group layout |
 
 ### Dynamic routes with `generateStaticParams`
 
@@ -291,6 +294,24 @@ export const generateStaticParams = async () => {
   return [{ slug: ["docs", "intro"] }]; // -> /docs/intro
 };
 ```
+
+### Route groups
+
+Folders whose name is wrapped in parentheses are ignored in the URL but can
+hold a `layout.ts` that applies to all their children:
+
+```
+src/app/
+├── (marketing)/
+│   ├── layout.ts
+│   ├── pricing/
+│   │   └── page.ts   # -> /pricing
+│   └── features/
+│       └── page.ts   # -> /features
+```
+
+This is useful for shared layouts that don't affect the public path, such as a
+marketing shell that differs from a dashboard shell.
 
 ### Auto island scan
 

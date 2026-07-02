@@ -31,6 +31,18 @@ for (const slug of ["hello-world", "nix-js-kit"]) {
   }
 }
 console.log("✓ generateStaticParams pages verified");
+
+// Verify route groups generate clean URLs without the group segment.
+for (const marketingPath of ["pricing", "features"]) {
+  const marketingHtml = readFileSync(join(here, "dist", marketingPath, "index.html"), "utf8");
+  if (!marketingHtml.includes(`<h1>${marketingPath[0].toUpperCase() + marketingPath.slice(1)}</h1>`)) {
+    throw new Error(`Route group page /${marketingPath} was not generated correctly`);
+  }
+  if (!marketingHtml.includes('class="marketing-layout"')) {
+    throw new Error(`Route group page /${marketingPath} is missing the group layout`);
+  }
+}
+console.log("✓ Route group pages verified");
 const window = new Window({ url: "http://localhost:3000/" });
 const g = globalThis as Record<string, unknown>;
 

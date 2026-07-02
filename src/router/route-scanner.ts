@@ -141,12 +141,14 @@ async function scanRecursive(
   for (const dir of dirs) {
     if (isRouteGroup(dir)) {
       // Route groups do not add a URL segment, but they can add a layout.
-      const groupLayout = files.includes("layout.ts")
-        ? join(currentDir, dir, "layout.ts")
+      const groupDir = join(currentDir, dir);
+      const groupFiles = await collectFiles(groupDir);
+      const groupLayout = groupFiles.includes("layout.ts")
+        ? join(groupDir, "layout.ts")
         : undefined;
       await scanRecursive(
         appDir,
-        join(currentDir, dir),
+        groupDir,
         urlSegments,
         params,
         groupLayout ? [...currentLayouts, groupLayout] : currentLayouts,
