@@ -16,6 +16,7 @@
         "src/adapters/vercel.ts",
         "src/adapters/netlify.ts",
         "src/adapters/bun.ts",
+        "src/adapters/node.ts",
         "src/action/index.ts",
         "src/action/server.ts",
         "src/action/scan.ts",

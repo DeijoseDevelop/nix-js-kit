@@ -24,7 +24,7 @@ import { handleActionRequest } from "./action/server";
 
 export interface CliOptions {
   command: "build" | "dev" | "preview" | "start" | "adapter";
-  adapterName?: "vercel" | "netlify" | "bun";
+  adapterName?: "vercel" | "netlify" | "bun" | "node";
   root: string;
   appDir: string;
   islandsDir?: string;
@@ -57,9 +57,10 @@ function parseArgs(argv: string[]): CliOptions {
     command === "adapter" &&
     adapterName !== "vercel" &&
     adapterName !== "netlify" &&
-    adapterName !== "bun"
+    adapterName !== "bun" &&
+    adapterName !== "node"
   ) {
-    throw new Error(`Usage: nix-js-kit adapter <vercel|netlify|bun> [options]`);
+    throw new Error(`Usage: nix-js-kit adapter <vercel|netlify|bun|node> [options]`);
   }
   const optionStart = command === "adapter" ? 2 : 1;
 
@@ -157,7 +158,7 @@ Commands:
   dev              Run a development server with rebuild-on-change
   preview          Serve the static build in production mode
   start            Run an SSR server that renders pages on demand
-  adapter <name>   Generate deployment output for a platform (vercel|netlify|bun)
+  adapter <name>   Generate deployment output for a platform (vercel|netlify|bun|node)
 
 Options:
   -r, --root <dir>          Project root (default: cwd)
@@ -443,6 +444,10 @@ async function doAdapter(options: CliOptions): Promise<void> {
     const { bunAdapter } = await import("./adapters/bun");
     await bunAdapter.build(adapterOptions);
     console.log("\n  → Bun server generated at .nix-js/bun-server.ts");
+  } else if (options.adapterName === "node") {
+    const { nodeAdapter } = await import("./adapters/node");
+    await nodeAdapter.build(adapterOptions);
+    console.log("\n  → Node server generated at .nix-js/node-server.mjs");
   }
 }
 

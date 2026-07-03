@@ -1,7 +1,7 @@
 import type { NixTemplate } from "@deijose/nix-js";
 import { renderToString } from "../render/render-to-string";
 import { documentShell } from "../build/document-shell";
-import type { PageRoute } from "../router/route-scanner";
+import type { PageRoute, ScannedRoutes } from "../router/route-scanner";
 import type { BuildConfig } from "../build/build";
 import type { PageDataLoad, PageProps, RouteParams } from "../types";
 
@@ -66,4 +66,35 @@ export async function renderPage(options: RenderPageOptions): Promise<string> {
     actions,
     clientEntry: config.clientEntry,
   });
+}
+
+export interface RenderErrorPageOptions {
+  routes: ScannedRoutes;
+  status: 404 | 500;
+  error?: unknown;
+  config: Pick<BuildConfig, "lang" | "clientEntry">;
+  actions?: Record<string, string>;
+  importer?: (path: string) => Promise<unknown>;
+}
+
+export async function renderErrorPage(
+  options: RenderErrorPageOptions,
+): Promise<{ html: string; status: number } | undefined> {
+  const route = options.status === 404 ? options.routes.error404 : options.routes.error500;
+  if (!route) return undefined;
+
+  try {
+    const html = await renderPage({
+      route,
+      params: {},
+      searchParams: new URLSearchParams(),
+      config: options.config,
+      actions: options.actions,
+      importer: options.importer,
+    });
+    return { html, status: options.status };
+  } catch (err) {
+    console.error(`[render] error ${options.status} page failed`, err);
+    return undefined;
+  }
 }

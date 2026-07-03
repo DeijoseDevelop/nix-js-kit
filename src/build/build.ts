@@ -3,7 +3,7 @@ import { join, dirname } from "node:path";
 import { scanRoutes, type PageRoute, type ScannedRoutes } from "../router/route-scanner";
 import { scanIslands, type IslandModule } from "../island/scan";
 import { generateClientEntry } from "../island/generate-entry";
-import { renderPage } from "../ssr/render";
+import { renderPage, renderErrorPage } from "../ssr/render";
 import { scanActions } from "../action/scan";
 import type { RouteParams, GenerateStaticParams } from "../types";
 
@@ -125,6 +125,38 @@ export async function build(config: BuildConfig): Promise<BuildResult> {
     } else {
       result.pages += dynamicFiles.length;
       result.files.push(...dynamicFiles);
+    }
+  }
+
+  // Generate static 404 and 500 error pages when they exist.
+  const errorConfig = { lang: config.lang, clientEntry: config.clientEntry };
+  if (routes.error404) {
+    const result404 = await renderErrorPage({
+      routes,
+      status: 404,
+      config: errorConfig,
+      actions,
+    });
+    if (result404) {
+      const filePath = join(config.outDir, "404.html");
+      await mkdir(dirname(filePath), { recursive: true });
+      await writeFile(filePath, result404.html, "utf8");
+      result.files.push(filePath);
+    }
+  }
+
+  if (routes.error500) {
+    const result500 = await renderErrorPage({
+      routes,
+      status: 500,
+      config: errorConfig,
+      actions,
+    });
+    if (result500) {
+      const filePath = join(config.outDir, "500.html");
+      await mkdir(dirname(filePath), { recursive: true });
+      await writeFile(filePath, result500.html, "utf8");
+      result.files.push(filePath);
     }
   }
 

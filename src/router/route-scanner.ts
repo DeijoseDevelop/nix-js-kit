@@ -48,6 +48,10 @@ export interface ApiRoute {
 export interface ScannedRoutes {
   pages: PageRoute[];
   api: ApiRoute[];
+  /** Optional 404 error page. */
+  error404?: PageRoute;
+  /** Optional 500 error page. */
+  error500?: PageRoute;
 }
 
 function isRouteGroup(segment: string): boolean {
@@ -182,6 +186,35 @@ async function scanRecursive(
  */
 export async function scanRoutes(appDir: string): Promise<ScannedRoutes> {
   const result: ScannedRoutes = { pages: [], api: [] };
+  const rootFiles = await collectFiles(appDir);
+  const rootLayout = rootFiles.includes("layout.ts")
+    ? join(appDir, "layout.ts")
+    : undefined;
+
+  if (rootFiles.includes("404.page.ts")) {
+    result.error404 = {
+      path: "/404",
+      pagePath: join(appDir, "404.page.ts"),
+      dataPath: rootFiles.includes("404.page.data.ts")
+        ? join(appDir, "404.page.data.ts")
+        : undefined,
+      layouts: rootLayout ? [rootLayout] : [],
+      params: [],
+    };
+  }
+
+  if (rootFiles.includes("500.page.ts")) {
+    result.error500 = {
+      path: "/500",
+      pagePath: join(appDir, "500.page.ts"),
+      dataPath: rootFiles.includes("500.page.data.ts")
+        ? join(appDir, "500.page.data.ts")
+        : undefined,
+      layouts: rootLayout ? [rootLayout] : [],
+      params: [],
+    };
+  }
+
   await scanRecursive(appDir, appDir, [], [], [], result);
   return result;
 }

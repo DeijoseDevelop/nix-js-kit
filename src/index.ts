@@ -24,7 +24,7 @@ export {
   type GenerateEntryOptions,
 } from "./island/generate-entry";
 export { matchRoute, type MatchResult } from "./ssr/match";
-export { renderPage, type RenderPageOptions } from "./ssr/render";
+export { renderPage, renderErrorPage, type RenderPageOptions, type RenderErrorPageOptions } from "./ssr/render";
 export { createSsrServer, type SsrServer, type SsrServerOptions } from "./ssr/server";
 export { run, type CliOptions } from "./cli";
 export { callAction, type ActionRequest } from "./action/index";
@@ -34,3 +34,4 @@ export type { Adapter, AdapterOptions } from "./adapters/index";
 export { vercelAdapter } from "./adapters/vercel";
 export { netlifyAdapter } from "./adapters/netlify";
 export { bunAdapter } from "./adapters/bun";
+export { nodeAdapter } from "./adapters/node";

@@ -27,6 +27,7 @@ export default defineConfig({
                 "adapters/vercel": resolve("src/adapters/vercel.ts"),
                 "adapters/netlify": resolve("src/adapters/netlify.ts"),
                 "adapters/bun": resolve("src/adapters/bun.ts"),
+                "adapters/node": resolve("src/adapters/node.ts"),
                 "action/index": resolve("src/action/index.ts"),
             },
             name: "NixJSKit",

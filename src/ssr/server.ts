@@ -5,7 +5,7 @@ import { scanRoutes } from "../router/route-scanner";
 import { scanActions } from "../action/scan";
 import { handleActionRequest } from "../action/server";
 import { matchRoute } from "./match";
-import { renderPage } from "./render";
+import { renderPage, renderErrorPage } from "./render";
 
 export interface SsrServerOptions {
   /** Absolute path to the app directory (e.g. /project/src/app). */
@@ -80,13 +80,14 @@ export async function createSsrServer(options: SsrServerOptions): Promise<SsrSer
 
     // Try SSR page rendering.
     const match = matchRoute(urlPath, routes.pages);
+    const config = { lang: options.lang ?? "es", clientEntry: options.clientEntry };
     if (match) {
       try {
         const html = await renderPage({
           route: match.route,
           params: match.params,
           searchParams: match.searchParams,
-          config: { lang: options.lang ?? "es", clientEntry: options.clientEntry },
+          config,
           actions,
         });
         res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
@@ -94,10 +95,34 @@ export async function createSsrServer(options: SsrServerOptions): Promise<SsrSer
         return;
       } catch (err) {
         console.error("[ssr] error rendering", urlPath, err);
-        res.writeHead(500, { "Content-Type": "text/plain; charset=utf-8" });
-        res.end(String(err));
+        const errorResult = await renderErrorPage({
+          routes,
+          status: 500,
+          error: err,
+          config,
+          actions,
+        });
+        if (errorResult) {
+          res.writeHead(errorResult.status, { "Content-Type": "text/html; charset=utf-8" });
+          res.end(errorResult.html);
+        } else {
+          res.writeHead(500, { "Content-Type": "text/plain; charset=utf-8" });
+          res.end(String(err));
+        }
         return;
       }
+    }
+
+    const errorResult = await renderErrorPage({
+      routes,
+      status: 404,
+      config,
+      actions,
+    });
+    if (errorResult) {
+      res.writeHead(errorResult.status, { "Content-Type": "text/html; charset=utf-8" });
+      res.end(errorResult.html);
+      return;
     }
 
     res.writeHead(404, { "Content-Type": "text/plain; charset=utf-8" });

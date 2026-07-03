@@ -2,6 +2,22 @@
 
 All notable changes to `@deijose/nix-js-kit` will be documented in this file.
 
+## 0.10.0
+
+### Added
+
+- Node adapter: `nix-js-kit adapter node` generates a self-contained `.nix-js/node-server.mjs` that serves `dist/` static files and renders pages on demand.
+- New subpath export `@deijose/nix-js-kit/adapters/node`.
+- Custom error pages: `src/app/404.page.ts` and `src/app/500.page.ts` are rendered for 404/500 responses during SSG, SSR, and in all deployment adapters.
+- `renderErrorPage()` and `RenderErrorPageOptions` exported from `@deijose/nix-js-kit`.
+
+### Changed
+
+- CLI `adapter` command now accepts `vercel`, `netlify`, `bun`, and `node`.
+- Route scanner detects `404.page.ts` and `500.page.ts` files and adds `error404`/`error500` to `ScannedRoutes`.
+- Static build writes `dist/404.html` and `dist/500.html` when error pages are present.
+- README updated with Node adapter and error pages sections.
+
 ## 0.9.0
 
 ### Added

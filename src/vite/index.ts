@@ -7,7 +7,7 @@ import { handleActionRequest } from "../action/server";
 import { scanIslands } from "../island/scan";
 import { buildEntrySource } from "../island/generate-entry";
 import { matchRoute } from "../ssr/match";
-import { renderPage } from "../ssr/render";
+import { renderPage, renderErrorPage } from "../ssr/render";
 
 export interface NixJsKitViteOptions {
   /** App directory relative to Vite root (default: src/app). */
@@ -173,25 +173,54 @@ async function handleSsrRequest(
   // Skip explicit file requests.
   if (urlPath.includes(".")) return false;
 
+  const config = { lang: options.lang, clientEntry: options.clientEntry };
   const match = matchRoute(urlPath, options.routes.pages);
-  if (!match) return false;
+  if (match) {
+    try {
+      const html = await renderPage({
+        route: match.route,
+        params: match.params,
+        searchParams: match.searchParams,
+        config,
+        importer: options.ssrLoad,
+        actions: options.actions,
+      });
+      res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+      res.end(html);
+      return true;
+    } catch (err) {
+      console.error("[nix-js-kit] SSR render error:", err);
+      const errorResult = await renderErrorPage({
+        routes: options.routes,
+        status: 500,
+        error: err,
+        config,
+        actions: options.actions,
+        importer: options.ssrLoad,
+      });
+      if (errorResult) {
+        res.writeHead(errorResult.status, { "Content-Type": "text/html; charset=utf-8" });
+        res.end(errorResult.html);
+      } else {
+        res.writeHead(500, { "Content-Type": "text/plain; charset=utf-8" });
+        res.end(String(err));
+      }
+      return true;
+    }
+  }
 
-  try {
-    const html = await renderPage({
-      route: match.route,
-      params: match.params,
-      searchParams: match.searchParams,
-      config: { lang: options.lang, clientEntry: options.clientEntry },
-      importer: options.ssrLoad,
-      actions: options.actions,
-    });
-    res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
-    res.end(html);
-    return true;
-  } catch (err) {
-    console.error("[nix-js-kit] SSR render error:", err);
-    res.writeHead(500, { "Content-Type": "text/plain; charset=utf-8" });
-    res.end(String(err));
+  const errorResult = await renderErrorPage({
+    routes: options.routes,
+    status: 404,
+    config,
+    actions: options.actions,
+    importer: options.ssrLoad,
+  });
+  if (errorResult) {
+    res.writeHead(errorResult.status, { "Content-Type": "text/html; charset=utf-8" });
+    res.end(errorResult.html);
     return true;
   }
+
+  return false;
 }

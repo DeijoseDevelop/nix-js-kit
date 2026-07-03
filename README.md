@@ -69,6 +69,7 @@ nix-js-kit start
 nix-js-kit adapter vercel
 nix-js-kit adapter netlify
 nix-js-kit adapter bun
+nix-js-kit adapter node
 ```
 
 By default it looks for `src/app/` and `src/islands/` and writes to `dist/`:
@@ -125,6 +126,8 @@ Options:
 - **Vercel adapter** — `nix-js-kit adapter vercel` generates `.vercel/output` with static files and an SSR fallback function.
 - **Netlify adapter** — `nix-js-kit adapter netlify` generates a Netlify Functions v2 SSR function and `netlify.toml`.
 - **Bun adapter** — `nix-js-kit adapter bun` generates a Bun server entry that serves static files and renders pages on demand.
+- **Node adapter** — `nix-js-kit adapter node` generates a self-contained Node server.
+- **Custom error pages** — `src/app/404.page.ts` and `src/app/500.page.ts` are rendered for 404/500 responses in SSG, SSR, and all adapters.
 - **Server actions** — define `page.action.ts` files next to `page.ts` and call them from the client with `callAction()`.
 - **`renderToString` for Nix.js templates** without touching the Nix.js core.
 - **Happy DOM** as a build-time dependency only — the Nix.js client bundle stays dependency-free.
@@ -146,7 +149,7 @@ Options:
 | v0.7 | Vercel adapter + DX improvements |
 | v0.8 | Netlify adapter + Bun adapter |
 | v0.9 | Server actions ✅ |
-| v1.0 | Stabilization: test suite, error handling, Node adapter, and action DX |
+| v1.0 | Stabilization: test suite, error handling ✅, Node adapter ✅, and action DX |
 
 ## API
 
@@ -264,6 +267,8 @@ The scanner recognizes:
 | `src/app/layout.ts` | all children | Root layout |
 | `src/app/blog/layout.ts` | `/blog/*` | Nested layout |
 | `src/app/(marketing)/layout.ts` | `/pricing`, `/features` | Group layout |
+| `src/app/404.page.ts` | error | Custom 404 page (SSG, SSR, adapters) |
+| `src/app/500.page.ts` | error | Custom 500 page (SSG, SSR, adapters) |
 
 ### Dynamic routes with `generateStaticParams`
 
@@ -356,6 +361,49 @@ src/app/
 
 This is useful for shared layouts that don't affect the public path, such as a
 marketing shell that differs from a dashboard shell.
+
+### Error pages
+
+Create optional `src/app/404.page.ts` and `src/app/500.page.ts` files to customize
+the response when a route is missing or when a page fails to render:
+
+```ts
+// src/app/404.page.ts
+import { html } from "@deijose/nix-js";
+
+export default function NotFoundPage() {
+  return html`
+    <article>
+      <h1>404</h1>
+      <p>Page not found.</p>
+      <a href="/">Back home</a>
+    </article>
+  `;
+}
+```
+
+```ts
+// src/app/500.page.ts
+import { html } from "@deijose/nix-js";
+
+export default function ErrorPage() {
+  return html`
+    <article>
+      <h1>500</h1>
+      <p>Something went wrong.</p>
+      <a href="/">Back home</a>
+    </article>
+  `;
+}
+```
+
+The framework renders these pages:
+
+- During `nix-js-kit build` as `dist/404.html` and `dist/500.html`.
+- During `nix-js-kit start` and in the Vite plugin for unmatched routes and render errors.
+- In every deployment adapter (`vercel`, `netlify`, `bun`, `node`) for unmatched routes and SSR render failures.
+
+Error pages receive the same `PageProps` as regular pages and can export their own `404.page.data.ts` or `500.page.data.ts` loaders.
 
 ### SSR runtime
 
@@ -498,6 +546,31 @@ await bunAdapter.build({
 });
 ```
 
+### Node adapter
+
+Run a production server with Node (v18+):
+
+```bash
+nix-js-kit build
+nix-js-kit adapter node
+node .nix-js/node-server.mjs
+```
+
+This generates a single bundled `.nix-js/node-server.mjs` that serves `dist/` static files and renders pages on demand. The server respects the `PORT` environment variable (default `3000`). Programmatic usage:
+
+```ts
+import { nodeAdapter } from "@deijose/nix-js-kit/adapters/node";
+
+await nodeAdapter.build({
+  root: process.cwd(),
+  appDir: "src/app",
+  islandsDir: "src/islands",
+  outDir: "dist",
+  clientEntry: "/_nix-js/entry-client.js",
+  lang: "es",
+});
+```
+
 ### Auto island scan
 
 When you pass `islandsDir` and `generatedEntry`, `build()` walks the islands
@@ -556,6 +629,8 @@ my-app/
 │       ├── page.ts          # home page
 │       ├── page.data.ts     # home loader
 │       ├── page.action.ts   # home server actions
+│       ├── 404.page.ts      # custom 404 page
+│       ├── 500.page.ts      # custom 500 page
 │       ├── blog/
 │       │   ├── page.ts
 │       │   ├── page.data.ts
