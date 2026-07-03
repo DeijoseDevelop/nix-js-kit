@@ -19,7 +19,7 @@ export const vercelAdapter: Adapter = {
     const root = resolve(options.root);
     const outDir = resolve(root, options.outDir);
     const vercelOut = resolve(root, ".vercel/output");
-    const functionsDir = join(vercelOut, "functions", "__nix-kit.func");
+    const functionsDir = join(vercelOut, "functions", "__nix-js-kit.func");
     const generatedDir = resolve(root, ".nix-js");
 
     // Verify the production build exists.
@@ -103,7 +103,7 @@ export const vercelAdapter: Adapter = {
           version: 3,
           routes: [
             { handle: "filesystem" },
-            { src: "/(.*)", "dest": "/__nix-kit" },
+            { src: "/(.*)", "dest": "/__nix-js-kit" },
           ],
         },
         null,

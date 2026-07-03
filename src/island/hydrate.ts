@@ -4,7 +4,7 @@ import type { NixTemplate } from "@deijose/nix-js";
 // --- Client-side island hydration ---
 // =============================================================================
 //
-// Finds [data-nix-island] markers in the current document and mounts the
+// Finds [data-nix-js-island] markers in the current document and mounts the
 // corresponding interactive components over them. This runs in the browser.
 // =============================================================================
 
@@ -23,11 +23,11 @@ interface IslandMarker {
 
 function collectMarkers(): IslandMarker[] {
   const elements = Array.from(
-    document.querySelectorAll<HTMLElement>("[data-nix-island]"),
+    document.querySelectorAll<HTMLElement>("[data-nix-js-island]"),
   );
   return elements.map((el) => ({
     el,
-    name: el.dataset.nixIsland ?? "",
+    name: el.dataset.nixJsIsland ?? "",
     directive: (el.dataset.directive as IslandDirective) ?? "load",
     props: el.dataset.props ? JSON.parse(el.dataset.props) : null,
   }));

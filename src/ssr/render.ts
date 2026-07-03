@@ -12,12 +12,14 @@ export interface RenderPageOptions {
   config: Pick<BuildConfig, "lang" | "clientEntry">;
   /** Custom module loader. Defaults to native dynamic import. */
   importer?: (path: string) => Promise<unknown>;
+  /** Registry of available server actions, keyed by action name. Values are the action file path. */
+  actions?: Record<string, string>;
 }
 
 const defaultImport = (path: string) => import(path);
 
 export async function renderPage(options: RenderPageOptions): Promise<string> {
-  const { route, params, searchParams, config, importer = defaultImport } = options;
+  const { route, params, searchParams, config, importer = defaultImport, actions } = options;
 
   const { default: PageComponent } = await importer(route.pagePath) as {
     default: (props: PageProps<unknown>) => NixTemplate;
@@ -61,6 +63,7 @@ export async function renderPage(options: RenderPageOptions): Promise<string> {
     lang: config.lang,
     body,
     data,
+    actions,
     clientEntry: config.clientEntry,
   });
 }

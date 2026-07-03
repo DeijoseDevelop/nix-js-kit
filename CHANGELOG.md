@@ -2,6 +2,22 @@
 
 All notable changes to `@deijose/nix-js-kit` will be documented in this file.
 
+## 0.9.0
+
+### Added
+
+- Server actions: create `page.action.ts` files next to `page.ts` and call exported functions from the client with `callAction()`.
+- New client subpath export `@deijose/nix-js-kit/action` exporting `callAction()` and `ActionRequest`.
+- Server-side action endpoint `POST /__nix-js/actions` handled by the CLI (`dev`, `preview`, `start`), the Vite plugin, and all deployment adapters (Vercel, Netlify, Bun).
+- New server exports `handleActionRequest`, `ActionResolver` and `scanActions` for custom integrations.
+- Document shell now serializes the scanned action registry into `<script id="nix-js-actions">` for client reference.
+- Island hydration markers renamed from `data-nix-island` to `data-nix-js-island`.
+
+### Changed
+
+- Route scanner detects `page.action.ts` files and adds `actionPath` to `PageRoute`.
+- README updated with a Server actions section and project conventions tree.
+
 ## 0.8.1
 
 ### Added
@@ -162,7 +178,7 @@ All notable changes to `@deijose/nix-js-kit` will be documented in this file.
 
 - Initial release of `@deijose/nix-js-kit`.
 - `renderToString` for Nix.js templates using `happy-dom` as a build-time DOM (client bundle remains dependency-free).
-- `documentShell` helper to wrap rendered HTML with a full document shell and serialize loader data via `<script id="nix-data">`.
+- `documentShell` helper to wrap rendered HTML with a full document shell and serialize loader data via `<script id="nix-js-data">`.
 - Public types: `PageProps`, `LayoutProps`, `PageDataLoad`, `LoadContext`, `RouteParams`, `ShellOptions`.
 - Proof-of-concept example under `example/` that generates `dist/index.html` from a `page.ts` + `page.data.ts` pair.
 - Vite library build configuration and TypeScript declaration generation.

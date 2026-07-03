@@ -4,6 +4,7 @@ import { scanRoutes, type PageRoute, type ScannedRoutes } from "../router/route-
 import { scanIslands, type IslandModule } from "../island/scan";
 import { generateClientEntry } from "../island/generate-entry";
 import { renderPage } from "../ssr/render";
+import { scanActions } from "../action/scan";
 import type { RouteParams, GenerateStaticParams } from "../types";
 
 // =============================================================================
@@ -93,6 +94,7 @@ function buildConcreteUrl(path: string, params: RouteParams): string {
  */
 export async function build(config: BuildConfig): Promise<BuildResult> {
   const routes = await scanRoutes(config.appDir);
+  const actions = await scanActions(config.appDir);
   const result: BuildResult = { pages: 0, skipped: [], files: [], islands: [] };
 
   // Scan islands and generate the client entry before rendering pages, so the
@@ -111,13 +113,13 @@ export async function build(config: BuildConfig): Promise<BuildResult> {
 
   for (const route of routes.pages) {
     if (!isDynamic(route.path)) {
-      const filePath = await buildPage(config, route);
+      const filePath = await buildPage(config, route, actions);
       result.pages++;
       result.files.push(filePath);
       continue;
     }
 
-    const dynamicFiles = await buildDynamicPages(config, route);
+    const dynamicFiles = await buildDynamicPages(config, route, actions);
     if (dynamicFiles.length === 0) {
       result.skipped.push(route.path);
     } else {
@@ -129,13 +131,18 @@ export async function build(config: BuildConfig): Promise<BuildResult> {
   return result;
 }
 
-async function buildPage(config: BuildConfig, route: PageRoute): Promise<string> {
-  return buildConcretePage(config, route, {});
+async function buildPage(
+  config: BuildConfig,
+  route: PageRoute,
+  actions: Record<string, string>,
+): Promise<string> {
+  return buildConcretePage(config, route, {}, actions);
 }
 
 async function buildDynamicPages(
   config: BuildConfig,
   route: PageRoute,
+  actions: Record<string, string>,
 ): Promise<string[]> {
   const { generateStaticParams } = (await import(
     route.pagePath
@@ -152,7 +159,7 @@ async function buildDynamicPages(
 
   const files: string[] = [];
   for (const params of paramList) {
-    files.push(await buildConcretePage(config, route, params));
+    files.push(await buildConcretePage(config, route, params, actions));
   }
   return files;
 }
@@ -161,12 +168,14 @@ async function buildConcretePage(
   config: BuildConfig,
   route: PageRoute,
   params: RouteParams,
+  actions: Record<string, string>,
 ): Promise<string> {
   const htmlOut = await renderPage({
     route,
     params,
     searchParams: new URLSearchParams(),
     config: { lang: config.lang, clientEntry: config.clientEntry },
+    actions,
   });
 
   const urlPath = isDynamic(route.path) ? buildConcreteUrl(route.path, params) : route.path;

@@ -14,8 +14,10 @@ export interface ShellOptions {
   title?: string;
   /** `<html lang>` attribute. */
   lang?: string;
-  /** Loader data serialized into `<script id="nix-data">`. */
+  /** Loader data serialized into `<script id="nix-js-data">`. */
   data?: unknown;
+  /** Action registry serialized into `<script id="nix-js-actions">`. */
+  actions?: Record<string, string>;
   /** Path to the client entry module, e.g. `/_nix-js/entry-client.js`. */
   clientEntry?: string;
 }
@@ -42,12 +44,16 @@ function serializeData(data: unknown): string {
 
 /** Wraps rendered body HTML into a full HTML document. */
 export function documentShell(opts: ShellOptions): string {
-  const { body, title = "Nix Kit App", lang = "es", data, clientEntry } = opts;
+  const { body, title = "Nix Kit App", lang = "es", data, actions, clientEntry } = opts;
 
   const dataScript =
     data !== undefined
-      ? `\n    <script type="application/json" id="nix-data">${serializeData(data)}</script>`
+      ? `\n    <script type="application/json" id="nix-js-data">${serializeData(data)}</script>`
       : "";
+
+  const actionsScript = actions && Object.keys(actions).length > 0
+    ? `\n    <script type="application/json" id="nix-js-actions">${serializeData(actions)}</script>`
+    : "";
 
   const entryScript = clientEntry
     ? `\n    <script type="module" src="${escapeHtml(clientEntry)}"></script>`
@@ -61,7 +67,7 @@ export function documentShell(opts: ShellOptions): string {
     <title>${escapeHtml(title)}</title>
   </head>
   <body>
-    <div id="app">${body}</div>${dataScript}${entryScript}
+    <div id="app">${body}</div>${dataScript}${actionsScript}${entryScript}
   </body>
 </html>
 `;

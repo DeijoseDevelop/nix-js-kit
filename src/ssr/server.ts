@@ -1,7 +1,9 @@
-import { createServer, type Server } from "node:http";
+import { createServer, type IncomingMessage, type Server } from "node:http";
 import { readFile, stat } from "node:fs/promises";
 import { extname, join } from "node:path";
 import { scanRoutes } from "../router/route-scanner";
+import { scanActions } from "../action/scan";
+import { handleActionRequest } from "../action/server";
 import { matchRoute } from "./match";
 import { renderPage } from "./render";
 
@@ -29,10 +31,42 @@ export interface SsrServer {
  */
 export async function createSsrServer(options: SsrServerOptions): Promise<SsrServer> {
   const routes = await scanRoutes(options.appDir);
+  const actions = await scanActions(options.appDir);
+
+  const resolveAction = async (name: string) => {
+    const actionPath = actions[name];
+    if (!actionPath) return undefined;
+    const mod = (await import(actionPath)) as Record<string, unknown>;
+    const action = mod[name];
+    if (typeof action === "function") {
+      return action as (...args: unknown[]) => unknown;
+    }
+    return undefined;
+  };
 
   const server = createServer(async (req, res) => {
     let urlPath = req.url ?? "/";
     if (urlPath.includes("?")) urlPath = urlPath.split("?")[0];
+
+    // Server actions endpoint.
+    if (urlPath === "/__nix-js/actions" && req.method === "POST") {
+      try {
+        const body = await readRequestBody(req);
+        const request = new Request(`http://${req.headers.host ?? "localhost"}${req.url}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body,
+        });
+        const response = await handleActionRequest(request, resolveAction);
+        res.writeHead(response.status, Object.fromEntries(response.headers.entries()));
+        res.end(await response.text());
+      } catch (err) {
+        console.error("[action] error handling", err);
+        res.writeHead(500, { "Content-Type": "text/plain; charset=utf-8" });
+        res.end(String(err));
+      }
+      return;
+    }
 
     // Try static files first.
     if (options.publicDir) {
@@ -53,6 +87,7 @@ export async function createSsrServer(options: SsrServerOptions): Promise<SsrSer
           params: match.params,
           searchParams: match.searchParams,
           config: { lang: options.lang ?? "es", clientEntry: options.clientEntry },
+          actions,
         });
         res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
         res.end(html);
@@ -120,6 +155,18 @@ async function tryServeStatic(
   res.writeHead(200, { "Content-Type": guessContentType(filePath) });
   res.end(data);
   return true;
+}
+
+function readRequestBody(req: IncomingMessage): Promise<string> {
+  return new Promise((resolve, reject) => {
+    let body = "";
+    req.setEncoding("utf8");
+    req.on("data", (chunk) => {
+      body += chunk;
+    });
+    req.on("end", () => resolve(body));
+    req.on("error", reject);
+  });
 }
 
 function guessContentType(filePath: string): string {

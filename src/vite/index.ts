@@ -2,6 +2,8 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, relative, resolve } from "node:path";
 import type { Plugin, Connect, ViteDevServer } from "vite";
 import { scanRoutes } from "../router/route-scanner";
+import { scanActions } from "../action/scan";
+import { handleActionRequest } from "../action/server";
 import { scanIslands } from "../island/scan";
 import { buildEntrySource } from "../island/generate-entry";
 import { matchRoute } from "../ssr/match";
@@ -38,6 +40,7 @@ export function nixJsKit(options: NixJsKitViteOptions = {}): Plugin {
   const hydrateImport = options.hydrateImport ?? "@deijose/nix-js-kit/island";
 
   let routes: Awaited<ReturnType<typeof scanRoutes>> | null = null;
+  let actions: Record<string, string> = {};
   let root: string = ".";
 
   return {
@@ -52,14 +55,37 @@ export function nixJsKit(options: NixJsKitViteOptions = {}): Plugin {
       await mkdir(dirname(entryPath), { recursive: true });
       await writeFile(entryPath, source, "utf8");
 
-      routes = await scanRoutes(resolve(root, appDir));
+      const appDirPath = resolve(root, appDir);
+      routes = await scanRoutes(appDirPath);
+      actions = await scanActions(appDirPath);
     },
 
     configureServer(server) {
       const ssrLoad = createSsrLoader(server, root);
+      const resolveAction = createActionResolver(actions);
 
       server.middlewares.use(async (req, res, next) => {
         const urlPath = req.url ?? "/";
+
+        // Server actions endpoint.
+        if (urlPath === "/__nix-js/actions" && req.method === "POST") {
+          try {
+            const body = await readRequestBody(req);
+            const request = new Request(`http://${req.headers.host ?? "localhost"}${req.url}`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body,
+            });
+            const response = await handleActionRequest(request, resolveAction);
+            res.writeHead(response.status, Object.fromEntries(response.headers.entries()));
+            res.end(await response.text());
+          } catch (err) {
+            console.error("[nix-js-kit] action error:", err);
+            res.writeHead(500, { "Content-Type": "text/plain; charset=utf-8" });
+            res.end(String(err));
+          }
+          return;
+        }
 
         if (urlPath.startsWith("/_nix-js/entry-client.js")) {
           const transformed = await server.transformRequest(
@@ -76,6 +102,7 @@ export function nixJsKit(options: NixJsKitViteOptions = {}): Plugin {
 
         const handled = await handleSsrRequest(req, res, next, {
           routes,
+          actions,
           clientEntry,
           lang,
           ssrLoad,
@@ -94,8 +121,34 @@ function createSsrLoader(server: ViteDevServer, root: string) {
   };
 }
 
+function createActionResolver(actions: Record<string, string>) {
+  return async (name: string) => {
+    const actionPath = actions[name];
+    if (!actionPath) return undefined;
+    const mod = (await import(actionPath)) as Record<string, unknown>;
+    const action = mod[name];
+    if (typeof action === "function") {
+      return action as (...args: unknown[]) => unknown;
+    }
+    return undefined;
+  };
+}
+
+function readRequestBody(req: Connect.IncomingMessage): Promise<string> {
+  return new Promise((resolve, reject) => {
+    let body = "";
+    req.setEncoding("utf8");
+    req.on("data", (chunk) => {
+      body += chunk;
+    });
+    req.on("end", () => resolve(body));
+    req.on("error", reject);
+  });
+}
+
 interface SsrHandlerOptions {
   routes: Awaited<ReturnType<typeof scanRoutes>> | null;
+  actions: Record<string, string>;
   clientEntry: string;
   lang: string;
   ssrLoad: (path: string) => Promise<unknown>;
@@ -130,6 +183,7 @@ async function handleSsrRequest(
       searchParams: match.searchParams,
       config: { lang: options.lang, clientEntry: options.clientEntry },
       importer: options.ssrLoad,
+      actions: options.actions,
     });
     res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
     res.end(html);

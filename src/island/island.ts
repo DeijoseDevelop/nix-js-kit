@@ -5,7 +5,7 @@ import type { NixTemplate } from "@deijose/nix-js";
 // =============================================================================
 //
 // Marks a component as an island. During server-side rendering it emits a
-// static placeholder with `data-nix-island` attributes. The client entry finds
+// static placeholder with `data-nix-js-island` attributes. The client entry finds
 // these markers and hydrates them with the real component + reactive signals.
 //
 // This is a minimal v0.2 implementation. Later versions will integrate with
@@ -39,7 +39,7 @@ export function island<TProps>(
   component(props)._render(container, null);
   const innerHtml = container.innerHTML;
 
-  const markerHtml = `<div data-nix-island="${escapeHtml(name)}" data-directive="${directive}" data-props='${serializeProps(props)}'>${innerHtml}</div>`;
+  const markerHtml = `<div data-nix-js-island="${escapeHtml(name)}" data-directive="${directive}" data-props='${serializeProps(props)}'>${innerHtml}</div>`;
 
   return {
     __isNixTemplate: true as const,

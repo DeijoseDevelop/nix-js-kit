@@ -54,12 +54,12 @@ for (const key of MANAGED_GLOBALS) {
 
 window.document.documentElement.innerHTML = html;
 
-const marker = window.document.querySelector("[data-nix-island]") as HTMLElement | null;
+const marker = window.document.querySelector("[data-nix-js-island]") as HTMLElement | null;
 if (!marker) {
   throw new Error("Island marker not found in generated HTML");
 }
-if (marker.dataset.nixIsland !== "LikeButton") {
-  throw new Error(`Expected island "LikeButton", got "${marker.dataset.nixIsland}"`);
+if (marker.dataset.nixJsIsland !== "LikeButton") {
+  throw new Error(`Expected island "LikeButton", got "${marker.dataset.nixJsIsland}"`);
 }
 
 // Load and execute the client entry bundle. It hydrates islands on import.

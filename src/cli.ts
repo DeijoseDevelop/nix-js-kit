@@ -5,6 +5,8 @@ import { watch } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { build, type BuildConfig } from "./build/build";
 import { createSsrServer } from "./ssr/server";
+import { scanActions } from "./action/scan";
+import { handleActionRequest } from "./action/server";
 
 // =============================================================================
 // --- CLI ---
@@ -212,7 +214,8 @@ async function doDev(options: CliOptions): Promise<void> {
     buildClient(options);
   }
 
-  const server = createServer((req, res) => handleRequest(req, res, options));
+  const actions = await scanActions(options.appDir);
+  const server = createServer((req, res) => handleRequest(req, res, options, actions));
   server.listen(options.port, options.host, () => {
     console.log(`\n  → Dev server http://${options.host}:${options.port}`);
   });
@@ -236,7 +239,8 @@ async function doPreview(options: CliOptions): Promise<void> {
     throw err;
   }
 
-  const server = createServer((req, res) => handleRequest(req, res, options));
+  const actions = await scanActions(options.appDir);
+  const server = createServer((req, res) => handleRequest(req, res, options, actions));
   server.listen(options.port, options.host, () => {
     console.log(`\n  → Preview server http://${options.host}:${options.port}`);
   });
@@ -270,9 +274,31 @@ async function handleRequest(
   req: import("node:http").IncomingMessage,
   res: import("node:http").ServerResponse,
   options: CliOptions,
+  actions: Record<string, string>,
 ): Promise<void> {
   let urlPath = req.url ?? "/";
   if (urlPath.includes("?")) urlPath = urlPath.split("?")[0];
+
+  // Server actions endpoint.
+  if (urlPath === "/__nix-js/actions" && req.method === "POST") {
+    try {
+      const body = await readRequestBody(req);
+      const request = new Request(`http://${req.headers.host ?? "localhost"}${req.url}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body,
+      });
+      const response = await handleActionRequest(request, createActionResolver(actions));
+      res.writeHead(response.status, Object.fromEntries(response.headers.entries()));
+      res.end(await response.text());
+    } catch (err) {
+      console.error("[nix-js-kit] action error:", err);
+      res.writeHead(500, { "Content-Type": "text/plain; charset=utf-8" });
+      res.end(String(err));
+    }
+    return;
+  }
+
   if (urlPath.endsWith("/")) urlPath += "index.html";
   if (extname(urlPath) === "") urlPath += "/index.html";
   if (urlPath.startsWith("/")) urlPath = urlPath.slice(1);
@@ -294,6 +320,31 @@ async function handleRequest(
       res.end(String(err));
     }
   }
+}
+
+function createActionResolver(actions: Record<string, string>) {
+  return async (name: string) => {
+    const actionPath = actions[name];
+    if (!actionPath) return undefined;
+    const mod = (await import(actionPath)) as Record<string, unknown>;
+    const action = mod[name];
+    if (typeof action === "function") {
+      return action as (...args: unknown[]) => unknown;
+    }
+    return undefined;
+  };
+}
+
+function readRequestBody(req: import("node:http").IncomingMessage): Promise<string> {
+  return new Promise((resolve, reject) => {
+    let body = "";
+    req.setEncoding("utf8");
+    req.on("data", (chunk) => {
+      body += chunk;
+    });
+    req.on("end", () => resolve(body));
+    req.on("error", reject);
+  });
 }
 
 function guessContentType(filePath: string): string {
@@ -387,7 +438,7 @@ async function doAdapter(options: CliOptions): Promise<void> {
   } else if (options.adapterName === "netlify") {
     const { netlifyAdapter } = await import("./adapters/netlify");
     await netlifyAdapter.build(adapterOptions);
-    console.log("\n  → Netlify output generated at netlify/functions/__nix-kit.mjs");
+    console.log("\n  → Netlify output generated at netlify/functions/__nix-js-kit.mjs");
   } else if (options.adapterName === "bun") {
     const { bunAdapter } = await import("./adapters/bun");
     await bunAdapter.build(adapterOptions);

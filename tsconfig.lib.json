@@ -16,6 +16,9 @@
         "src/adapters/vercel.ts",
         "src/adapters/netlify.ts",
         "src/adapters/bun.ts",
+        "src/action/index.ts",
+        "src/action/server.ts",
+        "src/action/scan.ts",
         "src/cli.ts"
     ],
     "exclude": [

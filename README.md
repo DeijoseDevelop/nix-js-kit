@@ -125,11 +125,12 @@ Options:
 - **Vercel adapter** — `nix-js-kit adapter vercel` generates `.vercel/output` with static files and an SSR fallback function.
 - **Netlify adapter** — `nix-js-kit adapter netlify` generates a Netlify Functions v2 SSR function and `netlify.toml`.
 - **Bun adapter** — `nix-js-kit adapter bun` generates a Bun server entry that serves static files and renders pages on demand.
+- **Server actions** — define `page.action.ts` files next to `page.ts` and call them from the client with `callAction()`.
 - **`renderToString` for Nix.js templates** without touching the Nix.js core.
 - **Happy DOM** as a build-time dependency only — the Nix.js client bundle stays dependency-free.
 - **Islands** via `island()` helper — mark interactive components and hydrate them on the client with `hydrateIslands`.
 - **Auto island scan** — `build()` scans `src/islands/` and generates the client hydration entry for you.
-- **Document shell** with serialized loader data (`<script id="nix-data">`).
+- **Document shell** with serialized loader data (`<script id="nix-js-data">`).
 - **CLI** (`nix-js-kit build` / `nix-js-kit dev` / `nix-js-kit preview` / `nix-js-kit start`).
 
 ## Roadmap
@@ -163,7 +164,7 @@ const body = await renderToString(() => HomePage({ data: { title: "Hi" } }));
 
 ### `documentShell(options)`
 
-Wraps rendered HTML in a full document shell with `<script id="nix-data">`.
+Wraps rendered HTML in a full document shell with `<script id="nix-js-data">`.
 
 ```ts
 import { documentShell } from "@deijose/nix-js-kit";
@@ -314,6 +315,31 @@ export const generateStaticParams = async () => {
 };
 ```
 
+### Server actions
+
+Create a `page.action.ts` file next to a `page.ts` and export async functions.
+They run on the server and can be called from the client with `callAction()`:
+
+```ts
+// src/app/page.action.ts
+export async function submitContact(data: { name: string; email: string }) {
+  // validate, write to DB, send email, etc.
+  return { ok: true };
+}
+```
+
+```ts
+// src/app/page.ts or any island
+import { callAction } from "@deijose/nix-js-kit/action";
+
+const result = await callAction("submitContact", { name: "Ada", email: "ada@example.com" });
+```
+
+The framework exposes a `POST /__nix-js/actions` endpoint in every server mode
+(`dev`, `preview`, `start` and all deployment adapters). The action name is
+resolved against the scanned `page.action.ts` modules and its return value is
+serialized as JSON.
+
 ### Route groups
 
 Folders whose name is wrapped in parentheses are ignored in the URL but can
@@ -396,7 +422,7 @@ nix-js-kit adapter vercel
 This produces a `.vercel/output` directory that includes:
 
 - `static/` — the static files from `dist/`.
-- `functions/__nix-kit.func/index.js` — a bundled SSR function for unmatched routes.
+- `functions/__nix-js-kit.func/index.js` — a bundled SSR function for unmatched routes.
 - `config.json` — Vercel Build Output API v3 routing config.
 
 You can also use the adapter programmatically:
@@ -425,7 +451,7 @@ nix-js-kit adapter netlify
 
 This produces:
 
-- `netlify/functions/__nix-kit.mjs` — bundled SSR function for Netlify Functions v2.
+- `netlify/functions/__nix-js-kit.mjs` — bundled SSR function for Netlify Functions v2.
 - `netlify.toml` — redirects unmatched routes to the function.
 
 The static files stay in `dist/` and are served directly by Netlify. Programmatic usage:
@@ -530,9 +556,11 @@ my-app/
 │       ├── layout.ts        # root layout
 │       ├── page.ts          # home page
 │       ├── page.data.ts     # home loader
+│       ├── page.action.ts   # home server actions
 │       ├── blog/
 │       │   ├── page.ts
-│       │   └── page.data.ts
+│       │   ├── page.data.ts
+│       │   └── page.action.ts
 │       └── api/
 │           └── posts/
 │               └── route.ts # API endpoint

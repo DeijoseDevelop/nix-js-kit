@@ -9,7 +9,7 @@ import { writeSsrEntry } from "./shared";
  * Netlify adapter for nix-js-kit.
  *
  * Produces the files expected by Netlify Functions v2:
- *   - `netlify/functions/__nix-kit.mjs` — bundled SSR function.
+ *   - `netlify/functions/__nix-js-kit.mjs` — bundled SSR function.
  *   - `netlify.toml` — redirects unmatched routes to the function.
  *
  * Run this after `nix-js-kit build`. The static files are left in `dist/` and
@@ -58,7 +58,7 @@ export const netlifyAdapter: Adapter = {
         lib: {
           entry: entryPath,
           formats: ["es"],
-          fileName: () => "__nix-kit.mjs",
+          fileName: () => "__nix-js-kit.mjs",
         },
         rollupOptions: {
           external: [],
@@ -71,12 +71,12 @@ export const netlifyAdapter: Adapter = {
 
     // Vite SSR lib builds may use the entry file name, so force the expected handler name.
     const generatedHandler = join(functionsDir, "netlify-index.js");
-    const targetHandler = join(functionsDir, "__nix-kit.mjs");
+    const targetHandler = join(functionsDir, "__nix-js-kit.mjs");
     try {
       await stat(generatedHandler);
       await rename(generatedHandler, targetHandler);
     } catch {
-      // If the file is already named __nix-kit.mjs, nothing to do.
+      // If the file is already named __nix-js-kit.mjs, nothing to do.
     }
 
     // Write Netlify redirects config.
@@ -88,7 +88,7 @@ export const netlifyAdapter: Adapter = {
 
 [[redirects]]
   from = "/*"
-  to = "/.netlify/functions/__nix-kit"
+  to = "/.netlify/functions/__nix-js-kit"
   status = 200
 `,
       "utf8",

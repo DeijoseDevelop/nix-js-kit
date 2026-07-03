@@ -26,6 +26,8 @@ export interface PageRoute {
   pagePath: string;
   /** File system path to the page.data.ts module, if any. */
   dataPath?: string;
+  /** File system path to the page.action.ts module, if any. */
+  actionPath?: string;
   /** Ordered list of layout.ts modules from root to leaf. */
   layouts: string[];
   /** Dynamic parameter names extracted from the path. */
@@ -109,6 +111,9 @@ async function scanRecursive(
   const dataPath = files.includes("page.data.ts")
     ? join(currentDir, "page.data.ts")
     : undefined;
+  const actionPath = files.includes("page.action.ts")
+    ? join(currentDir, "page.action.ts")
+    : undefined;
   const layoutPath = files.includes("layout.ts")
     ? join(currentDir, "layout.ts")
     : undefined;
@@ -133,6 +138,7 @@ async function scanRecursive(
       path: urlSegments.length === 0 ? "/" : "/" + urlSegments.join("/"),
       pagePath,
       dataPath,
+      actionPath,
       layouts: currentLayouts,
       params: [...params],
     });
