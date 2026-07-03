@@ -358,10 +358,10 @@ and automatic island entry generation:
 
 ```ts
 import { defineConfig } from "vite";
-import { nixKit } from "@deijose/nix-js-kit/vite";
+import { nixJsKit } from "@deijose/nix-js-kit/vite";
 
 export default defineConfig({
-  plugins: [nixKit()],
+  plugins: [nixJsKit()],
 });
 ```
 

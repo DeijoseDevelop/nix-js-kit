@@ -2,11 +2,18 @@
 
 All notable changes to `@deijose/nix-js-kit` will be documented in this file.
 
+## 0.6.1
+
+### Changed
+
+- Renamed Vite plugin function from `nixKit` to `nixJsKit` and the options interface from `NixKitViteOptions` to `NixJsKitViteOptions` to keep the `js` word in the public API.
+- Updated README, CHANGELOG and example import to use `nixJsKit`.
+
 ## 0.6.0
 
 ### Added
 
-- Official Vite plugin: `import { nixKit } from "@deijose/nix-js-kit/vite"`.
+- Official Vite plugin: `import { nixJsKit } from "@deijose/nix-js-kit/vite"`.
 - Vite plugin generates the islands entry automatically and renders pages via SSR on the Vite dev server.
 - New subpath export `@deijose/nix-js-kit/vite` for plugin usage.
 - Added `example/vite.config.ts` demonstrating the Vite plugin.

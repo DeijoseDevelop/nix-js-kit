@@ -1,9 +1,9 @@
 import { defineConfig } from "vite";
-import { nixKit } from "@deijose/nix-js-kit/vite";
+import { nixJsKit } from "@deijose/nix-js-kit/vite";
 
 export default defineConfig({
   plugins: [
-    nixKit({
+    nixJsKit({
       appDir: "src/app",
       islandsDir: "src/islands",
       generatedEntry: ".nix-js/entry-client.ts",

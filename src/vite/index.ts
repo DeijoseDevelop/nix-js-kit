@@ -7,7 +7,7 @@ import { buildEntrySource } from "../island/generate-entry";
 import { matchRoute } from "../ssr/match";
 import { renderPage } from "../ssr/render";
 
-export interface NixKitViteOptions {
+export interface NixJsKitViteOptions {
   /** App directory relative to Vite root (default: src/app). */
   appDir?: string;
   /** Islands directory relative to Vite root (default: src/islands). */
@@ -23,13 +23,13 @@ export interface NixKitViteOptions {
 }
 
 /**
- * Official Vite plugin for Nix.js Kit.
+ * Official Vite plugin for nix-js-kit.
  *
  * In dev mode it generates the islands entry and renders every page via SSR.
  * In production builds it can be combined with `nix-js-kit build` to generate
  * static HTML files.
  */
-export function nixKit(options: NixKitViteOptions = {}): Plugin {
+export function nixJsKit(options: NixJsKitViteOptions = {}): Plugin {
   const appDir = options.appDir ?? "src/app";
   const islandsDir = options.islandsDir ?? "src/islands";
   const generatedEntry = options.generatedEntry ?? ".nix-js/entry-client.ts";
