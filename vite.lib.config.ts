@@ -22,6 +22,7 @@ export default defineConfig({
             entry: {
                 index: resolve("src/index.ts"),
                 "island/index": resolve("src/island/index.ts"),
+                "vite/index": resolve("src/vite/index.ts"),
             },
             name: "NixJSKit",
             formats: ["es", "cjs"],
@@ -32,7 +33,18 @@ export default defineConfig({
         },
 
         rollupOptions: {
-            external: ["@deijose/nix-js", "happy-dom"],
+            external: [
+                "@deijose/nix-js",
+                "happy-dom",
+                /^node:/,
+                "module",
+                "fs",
+                "fs/promises",
+                "path",
+                "url",
+                "http",
+                "child_process",
+            ],
             output: {
                 preserveModules: false,
                 globals: {

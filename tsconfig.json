@@ -20,6 +20,9 @@
       ],
       "@deijose/nix-js-kit/cli": [
         "./src/cli.ts"
+      ],
+      "@deijose/nix-js-kit/vite": [
+        "./src/vite/index.ts"
       ]
     },
     "verbatimModuleSyntax": true,

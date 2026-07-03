@@ -110,7 +110,7 @@ Options:
 | `--hydrate-import <spec>` | `@deijose/nix-js-kit/island` | Import path for `hydrateIslands` in generated entry |
 | `--client-config <path>` | — | Vite config used to build the client bundle in dev mode |
 
-## Core features (v0.5)
+## Core features (v0.6)
 
 - **Static site generation (SSG)** from `src/app/` file conventions.
 - **File-based route scanner** — maps `page.ts` files to URLs.
@@ -118,6 +118,7 @@ Options:
 - **Route groups** `(marketing)` — shared layouts without affecting the URL path.
 - **Layout chain** — nested `layout.ts` files wrap pages automatically.
 - **SSR runtime** — `nix-js-kit start` renders pages on demand and serves static assets.
+- **Vite plugin** — `nixKit()` gives a Vite-native dev server with SSR and island entry generation.
 - **`renderToString` for Nix.js templates** without touching the Nix.js core.
 - **Happy DOM** as a build-time dependency only — the Nix.js client bundle stays dependency-free.
 - **Islands** via `island()` helper — mark interactive components and hydrate them on the client with `hydrateIslands`.
@@ -134,8 +135,8 @@ Options:
 | v0.3 | CLI + dev server |
 | v0.4 | `generateStaticParams`, route groups, preview server |
 | v0.5 | SSR runtime + adapter-node |
-| v0.6 | Adapters Vercel/Netlify/Bun + server actions |
-| v0.7 | Vite plugin, type-safe `PageProps`, islands DX |
+| v0.6 | Vite plugin + DX improvements |
+| v0.7 | Adapters Vercel/Netlify/Bun + server actions |
 
 See the full architecture proposal in `docs/nix-js-kit-propuesta-implementacion.md`.
 
@@ -349,6 +350,30 @@ const ssr = await createSsrServer({
 });
 await ssr.listen();
 ```
+
+### Vite plugin
+
+The official Vite plugin gives you a Vite-native dev server with SSR rendering
+and automatic island entry generation:
+
+```ts
+import { defineConfig } from "vite";
+import { nixKit } from "@deijose/nix-js-kit/vite";
+
+export default defineConfig({
+  plugins: [nixKit()],
+});
+```
+
+Then run the Vite dev server:
+
+```bash
+npx vite
+```
+
+The plugin scans `src/app/`, writes `.nix-js/entry-client.ts` and renders every
+page on demand. For production, keep using `nix-js-kit build` to generate static
+HTML and the client bundle.
 
 ### Auto island scan
 

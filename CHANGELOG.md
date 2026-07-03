@@ -2,6 +2,19 @@
 
 All notable changes to `@deijose/nix-js-kit` will be documented in this file.
 
+## 0.6.0
+
+### Added
+
+- Official Vite plugin: `import { nixKit } from "@deijose/nix-js-kit/vite"`.
+- Vite plugin generates the islands entry automatically and renders pages via SSR on the Vite dev server.
+- New subpath export `@deijose/nix-js-kit/vite` for plugin usage.
+- Added `example/vite.config.ts` demonstrating the Vite plugin.
+
+### Changed
+
+- README updated with Vite plugin section and roadmap v0.6/v0.7.
+
 ## 0.5.0
 
 ### Added

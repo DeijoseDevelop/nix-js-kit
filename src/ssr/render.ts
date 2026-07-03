@@ -1,3 +1,4 @@
+import type { NixTemplate } from "@deijose/nix-js";
 import { renderToString } from "../render/render-to-string";
 import { documentShell } from "../build/document-shell";
 import type { PageRoute } from "../router/route-scanner";
@@ -9,16 +10,22 @@ export interface RenderPageOptions {
   params: RouteParams;
   searchParams: URLSearchParams;
   config: Pick<BuildConfig, "lang" | "clientEntry">;
+  /** Custom module loader. Defaults to native dynamic import. */
+  importer?: (path: string) => Promise<unknown>;
 }
 
-export async function renderPage(options: RenderPageOptions): Promise<string> {
-  const { route, params, searchParams, config } = options;
+const defaultImport = (path: string) => import(path);
 
-  const { default: PageComponent } = await import(route.pagePath);
+export async function renderPage(options: RenderPageOptions): Promise<string> {
+  const { route, params, searchParams, config, importer = defaultImport } = options;
+
+  const { default: PageComponent } = await importer(route.pagePath) as {
+    default: (props: PageProps<unknown>) => NixTemplate;
+  };
 
   let data: unknown;
   if (route.dataPath) {
-    const { load } = await import(route.dataPath) as { load?: PageDataLoad };
+    const { load } = await importer(route.dataPath) as { load?: PageDataLoad };
     if (load) {
       data = await load({ params, searchParams });
     }
@@ -31,13 +38,15 @@ export async function renderPage(options: RenderPageOptions): Promise<string> {
   };
 
   const layoutModules = await Promise.all(
-    route.layouts.map(async (layoutPath) => import(layoutPath)),
+    route.layouts.map(async (layoutPath) => importer(layoutPath)),
   );
 
   const body = await renderToString(() => {
     let template = PageComponent(props);
     for (let i = layoutModules.length - 1; i >= 0; i--) {
-      const { default: Layout } = layoutModules[i];
+      const { default: Layout } = layoutModules[i] as {
+        default: (props: { children: NixTemplate }) => NixTemplate;
+      };
       template = Layout({ children: template });
     }
     return template;
