@@ -145,9 +145,8 @@ Options:
 | v0.6 | Vite plugin + DX improvements |
 | v0.7 | Vercel adapter + DX improvements |
 | v0.8 | Netlify adapter + Bun adapter |
-| v0.9 | Server actions |
-
-See the full architecture proposal in `docs/nix-js-kit-propuesta-implementacion.md`.
+| v0.9 | Server actions ✅ |
+| v1.0 | Stabilization: test suite, error handling, Node adapter, and action DX |
 
 ## API
 
