@@ -2,6 +2,18 @@
 
 All notable changes to `@deijose/nix-js-kit` will be documented in this file.
 
+## 0.8.1
+
+### Added
+
+- Bun adapter: `nix-js-kit adapter bun` generates `.nix-js/bun-server.ts` and `.nix-js/bun-index.ts` for running a production Bun server.
+- New subpath export `@deijose/nix-js-kit/adapters/bun`.
+
+### Changed
+
+- CLI `adapter` command now accepts `vercel`, `netlify` and `bun`.
+- README updated with Bun adapter instructions and roadmap v0.9.
+
 ## 0.8.0
 
 ### Added

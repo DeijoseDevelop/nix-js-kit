@@ -68,6 +68,7 @@ nix-js-kit preview
 nix-js-kit start
 nix-js-kit adapter vercel
 nix-js-kit adapter netlify
+nix-js-kit adapter bun
 ```
 
 By default it looks for `src/app/` and `src/islands/` and writes to `dist/`:
@@ -123,6 +124,7 @@ Options:
 - **Vite plugin** — `nixJsKit()` gives a Vite-native dev server with SSR and island entry generation.
 - **Vercel adapter** — `nix-js-kit adapter vercel` generates `.vercel/output` with static files and an SSR fallback function.
 - **Netlify adapter** — `nix-js-kit adapter netlify` generates a Netlify Functions v2 SSR function and `netlify.toml`.
+- **Bun adapter** — `nix-js-kit adapter bun` generates a Bun server entry that serves static files and renders pages on demand.
 - **`renderToString` for Nix.js templates** without touching the Nix.js core.
 - **Happy DOM** as a build-time dependency only — the Nix.js client bundle stays dependency-free.
 - **Islands** via `island()` helper — mark interactive components and hydrate them on the client with `hydrateIslands`.
@@ -141,7 +143,8 @@ Options:
 | v0.5 | SSR runtime + adapter-node |
 | v0.6 | Vite plugin + DX improvements |
 | v0.7 | Vercel adapter + DX improvements |
-| v0.8 | Netlify adapter + Bun adapter + server actions |
+| v0.8 | Netlify adapter + Bun adapter |
+| v0.9 | Server actions |
 
 See the full architecture proposal in `docs/nix-js-kit-propuesta-implementacion.md`.
 
@@ -431,6 +434,36 @@ The static files stay in `dist/` and are served directly by Netlify. Programmati
 import { netlifyAdapter } from "@deijose/nix-js-kit/adapters/netlify";
 
 await netlifyAdapter.build({
+  root: process.cwd(),
+  appDir: "src/app",
+  islandsDir: "src/islands",
+  outDir: "dist",
+  clientEntry: "/_nix-js/entry-client.js",
+  lang: "es",
+});
+```
+
+### Bun adapter
+
+Run a production server with Bun:
+
+```bash
+nix-js-kit build
+nix-js-kit adapter bun
+bun run .nix-js/bun-server.ts
+```
+
+This generates:
+
+- `.nix-js/bun-index.ts` — SSR handler entry.
+- `.nix-js/bun-server.ts` — Bun server that serves `dist/` static files and renders pages on demand.
+
+The server respects the `PORT` environment variable (default `3000`). Programmatic usage:
+
+```ts
+import { bunAdapter } from "@deijose/nix-js-kit/adapters/bun";
+
+await bunAdapter.build({
   root: process.cwd(),
   appDir: "src/app",
   islandsDir: "src/islands",

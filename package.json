@@ -1,6 +1,6 @@
 {
   "name": "@deijose/nix-js-kit",
-  "version": "0.8.0",
+  "version": "0.8.1",
   "description": "Full-stack meta-framework for Nix.js — file-based routing, SSG and islands.",
   "license": "MIT",
   "author": "Deiver Vasquez",
@@ -57,6 +57,11 @@
       "types": "./dist/lib/adapters/netlify.d.ts",
       "import": "./dist/lib/adapters/netlify.js",
       "require": "./dist/lib/adapters/netlify.cjs"
+    },
+    "./adapters/bun": {
+      "types": "./dist/lib/adapters/bun.d.ts",
+      "import": "./dist/lib/adapters/bun.js",
+      "require": "./dist/lib/adapters/bun.cjs"
     }
   },
   "files": [
