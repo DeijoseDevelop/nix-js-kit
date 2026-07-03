@@ -23,4 +23,7 @@ export {
   buildEntrySource,
   type GenerateEntryOptions,
 } from "./island/generate-entry";
+export { matchRoute, type MatchResult } from "./ssr/match";
+export { renderPage, type RenderPageOptions } from "./ssr/render";
+export { createSsrServer, type SsrServer, type SsrServerOptions } from "./ssr/server";
 export { run, type CliOptions } from "./cli";

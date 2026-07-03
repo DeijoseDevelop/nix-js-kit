@@ -4,6 +4,7 @@ import { extname, join, resolve, relative } from "node:path";
 import { watch } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { build, type BuildConfig } from "./build/build";
+import { createSsrServer } from "./ssr/server";
 
 // =============================================================================
 // --- CLI ---
@@ -13,13 +14,14 @@ import { build, type BuildConfig } from "./build/build";
 //   nix-js-kit build   — run a production static build
 //   nix-js-kit dev     — run a dev server that rebuilds on file changes
 //   nix-js-kit preview — serve the static build in production mode
+//   nix-js-kit start   — run an SSR server that renders pages on demand
 //
 // This is intentionally small: no generators, no config file parsing, just
 // convention-based defaults overridable via CLI flags.
 // =============================================================================
 
 export interface CliOptions {
-  command: "build" | "dev" | "preview";
+  command: "build" | "dev" | "preview" | "start";
   root: string;
   appDir: string;
   islandsDir?: string;
@@ -44,8 +46,8 @@ function parseArgs(argv: string[]): CliOptions {
     process.exit(0);
   }
   const command = args[0];
-  if (command !== "build" && command !== "dev" && command !== "preview") {
-    throw new Error(`Usage: nix-js-kit <build|dev|preview> [options]`);
+  if (command !== "build" && command !== "dev" && command !== "preview" && command !== "start") {
+    throw new Error(`Usage: nix-js-kit <build|dev|preview|start> [options]`);
   }
 
   let root = process.cwd();
@@ -140,6 +142,7 @@ Commands:
   build    Run a static site build
   dev      Run a development server with rebuild-on-change
   preview  Serve the static build in production mode
+  start    Run an SSR server that renders pages on demand
 
 Options:
   -r, --root <dir>          Project root (default: cwd)
@@ -224,6 +227,18 @@ async function doPreview(options: CliOptions): Promise<void> {
   server.listen(options.port, options.host, () => {
     console.log(`\n  → Preview server http://${options.host}:${options.port}`);
   });
+}
+
+async function doStart(options: CliOptions): Promise<void> {
+  const ssr = await createSsrServer({
+    appDir: options.appDir,
+    publicDir: options.outDir,
+    clientEntry: options.clientEntry,
+    lang: options.lang,
+    port: options.port,
+    host: options.host,
+  });
+  await ssr.listen();
 }
 
 function buildClient(options: CliOptions): void {
@@ -348,6 +363,8 @@ export async function run(argv: string[]): Promise<void> {
     await doBuild(options);
   } else if (options.command === "preview") {
     await doPreview(options);
+  } else if (options.command === "start") {
+    await doStart(options);
   } else {
     await doDev(options);
   }

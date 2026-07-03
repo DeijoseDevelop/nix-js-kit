@@ -2,6 +2,20 @@
 
 All notable changes to `@deijose/nix-js-kit` will be documented in this file.
 
+## 0.5.0
+
+### Added
+
+- SSR runtime: `nix-js-kit start` renders pages on demand and serves static assets from `dist/`.
+- `matchRoute` URL matcher for dynamic and catch-all routes.
+- `renderPage` shared renderer used by both SSG and SSR.
+- `createSsrServer` exported from the public API for custom Node deployments.
+
+### Changed
+
+- `src/build/build.ts` now uses the shared `renderPage` from `src/ssr/render.ts`.
+- CLI help text and README updated to include the `start` command.
+
 ## 0.4.2
 
 ### Added

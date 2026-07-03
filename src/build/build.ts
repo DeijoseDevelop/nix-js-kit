@@ -1,11 +1,10 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { join, dirname } from "node:path";
-import { renderToString } from "../render/render-to-string";
-import { documentShell } from "./document-shell";
 import { scanRoutes, type PageRoute, type ScannedRoutes } from "../router/route-scanner";
 import { scanIslands, type IslandModule } from "../island/scan";
 import { generateClientEntry } from "../island/generate-entry";
-import type { PageProps, PageDataLoad, RouteParams, GenerateStaticParams } from "../types";
+import { renderPage } from "../ssr/render";
+import type { RouteParams, GenerateStaticParams } from "../types";
 
 // =============================================================================
 // --- SSG build orchestrator ---
@@ -163,49 +162,11 @@ async function buildConcretePage(
   route: PageRoute,
   params: RouteParams,
 ): Promise<string> {
-  const { default: PageComponent } = await import(route.pagePath);
-
-  let data: unknown;
-  if (route.dataPath) {
-    const { load } = await import(route.dataPath) as { load?: PageDataLoad };
-    if (load) {
-      data = await load({
-        params,
-        searchParams: new URLSearchParams(),
-      });
-    }
-  }
-
-  const props: PageProps<unknown> = {
-    data: data ?? {},
+  const htmlOut = await renderPage({
+    route,
     params,
     searchParams: new URLSearchParams(),
-  };
-
-  // Import layouts eagerly; composition itself must happen inside
-  // renderToString so html`` is evaluated while the DOM globals are installed.
-  const layoutModules = await Promise.all(
-    route.layouts.map(async (layoutPath) => import(layoutPath)),
-  );
-
-  const body = await renderToString(() => {
-    let template = PageComponent(props);
-    for (let i = layoutModules.length - 1; i >= 0; i--) {
-      const { default: Layout } = layoutModules[i];
-      template = Layout({ children: template });
-    }
-    return template;
-  });
-  const title = typeof data === "object" && data && "title" in data
-    ? String((data as { title?: unknown }).title ?? "Nix Kit")
-    : "Nix Kit";
-
-  const htmlOut = documentShell({
-    title,
-    lang: config.lang,
-    body,
-    data,
-    clientEntry: config.clientEntry,
+    config: { lang: config.lang, clientEntry: config.clientEntry },
   });
 
   const urlPath = isDynamic(route.path) ? buildConcreteUrl(route.path, params) : route.path;

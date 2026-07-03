@@ -65,6 +65,7 @@ After installing, the `nix-js-kit` binary is available in your project:
 nix-js-kit build
 nix-js-kit dev
 nix-js-kit preview
+nix-js-kit start
 ```
 
 By default it looks for `src/app/` and `src/islands/` and writes to `dist/`:
@@ -88,6 +89,13 @@ nix-js-kit build
 nix-js-kit preview
 ```
 
+Run the SSR server (renders pages on demand):
+
+```bash
+nix-js-kit build          # generate or update the client bundle
+nix-js-kit start
+```
+
 Options:
 
 | Flag | Default | Description |
@@ -102,19 +110,20 @@ Options:
 | `--hydrate-import <spec>` | `@deijose/nix-js-kit/island` | Import path for `hydrateIslands` in generated entry |
 | `--client-config <path>` | — | Vite config used to build the client bundle in dev mode |
 
-## Core features (v0.4)
+## Core features (v0.5)
 
 - **Static site generation (SSG)** from `src/app/` file conventions.
 - **File-based route scanner** — maps `page.ts` files to URLs.
 - **Dynamic routes** with `generateStaticParams` — generate static HTML for `[slug]` and `[...slug]` routes.
 - **Route groups** `(marketing)` — shared layouts without affecting the URL path.
 - **Layout chain** — nested `layout.ts` files wrap pages automatically.
+- **SSR runtime** — `nix-js-kit start` renders pages on demand and serves static assets.
 - **`renderToString` for Nix.js templates** without touching the Nix.js core.
 - **Happy DOM** as a build-time dependency only — the Nix.js client bundle stays dependency-free.
 - **Islands** via `island()` helper — mark interactive components and hydrate them on the client with `hydrateIslands`.
 - **Auto island scan** — `build()` scans `src/islands/` and generates the client hydration entry for you.
 - **Document shell** with serialized loader data (`<script id="nix-data">`).
-- **CLI** (`nix-js-kit build` / `nix-js-kit dev` / `nix-js-kit preview`) with dev server, rebuild-on-change and production preview server.
+- **CLI** (`nix-js-kit build` / `nix-js-kit dev` / `nix-js-kit preview` / `nix-js-kit start`).
 
 ## Roadmap
 
@@ -124,8 +133,9 @@ Options:
 | v0.2 | Islands, data loading, actions, API routes |
 | v0.3 | CLI + dev server |
 | v0.4 | `generateStaticParams`, route groups, preview server |
-| v0.5 | SSR runtime + adapters |
-| v0.6 | Vite plugin, type-safe `PageProps`, islands DX |
+| v0.5 | SSR runtime + adapter-node |
+| v0.6 | Adapters Vercel/Netlify/Bun + server actions |
+| v0.7 | Vite plugin, type-safe `PageProps`, islands DX |
 
 See the full architecture proposal in `docs/nix-js-kit-propuesta-implementacion.md`.
 
@@ -312,6 +322,33 @@ src/app/
 
 This is useful for shared layouts that don't affect the public path, such as a
 marketing shell that differs from a dashboard shell.
+
+### SSR runtime
+
+`nix-js-kit start` runs a Node HTTP server that renders pages on demand,
+matching the request URL against the scanned routes and running loaders with
+params and search params. Static files are served from the output directory
+first, so the client bundle and other assets keep working:
+
+```bash
+nix-js-kit build          # build the client bundle and any static files
+nix-js-kit start          # SSR server on http://127.0.0.1:3000
+```
+
+You can also use the lower-level API to embed the SSR server in a custom Node
+app:
+
+```ts
+import { createSsrServer } from "@deijose/nix-js-kit";
+
+const ssr = await createSsrServer({
+  appDir: "./src/app",
+  publicDir: "./dist",
+  clientEntry: "/_nix-js/entry-client.js",
+  port: 3000,
+});
+await ssr.listen();
+```
 
 ### Auto island scan
 
