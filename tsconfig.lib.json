@@ -12,6 +12,8 @@
         "src/index.ts",
         "src/island/index.ts",
         "src/vite/index.ts",
+        "src/adapters/index.ts",
+        "src/adapters/vercel.ts",
         "src/cli.ts"
     ],
     "exclude": [

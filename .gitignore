@@ -31,6 +31,7 @@ coverage/
 
 # Example output
 example/dist/
+example/.vercel/
 
 # Auto-generated client entry
 **/.nix-js/

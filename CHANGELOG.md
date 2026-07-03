@@ -2,6 +2,19 @@
 
 All notable changes to `@deijose/nix-js-kit` will be documented in this file.
 
+## 0.7.0
+
+### Added
+
+- Vercel adapter: `nix-js-kit adapter vercel` generates a `.vercel/output` directory compatible with the Vercel Build Output API v3.
+- New adapter interface in `src/adapters/index.ts`.
+- New CLI command `nix-js-kit adapter <name>` (currently supports `vercel`).
+- New subpath exports `@deijose/nix-js-kit/adapters` and `@deijose/nix-js-kit/adapters/vercel`.
+
+### Changed
+
+- README updated with adapters section, CLI command list and roadmap v0.7/v0.8.
+
 ## 0.6.1
 
 ### Changed

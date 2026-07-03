@@ -21,7 +21,8 @@ import { createSsrServer } from "./ssr/server";
 // =============================================================================
 
 export interface CliOptions {
-  command: "build" | "dev" | "preview" | "start";
+  command: "build" | "dev" | "preview" | "start" | "adapter";
+  adapterName?: "vercel";
   root: string;
   appDir: string;
   islandsDir?: string;
@@ -46,9 +47,14 @@ function parseArgs(argv: string[]): CliOptions {
     process.exit(0);
   }
   const command = args[0];
-  if (command !== "build" && command !== "dev" && command !== "preview" && command !== "start") {
-    throw new Error(`Usage: nix-js-kit <build|dev|preview|start> [options]`);
+  if (command !== "build" && command !== "dev" && command !== "preview" && command !== "start" && command !== "adapter") {
+    throw new Error(`Usage: nix-js-kit <build|dev|preview|start|adapter> [options]`);
   }
+  const adapterName = command === "adapter" ? args[1] : undefined;
+  if (command === "adapter" && adapterName !== "vercel") {
+    throw new Error(`Usage: nix-js-kit adapter <vercel> [options]`);
+  }
+  const optionStart = command === "adapter" ? 2 : 1;
 
   let root = process.cwd();
   let appDir = "src/app";
@@ -62,7 +68,7 @@ function parseArgs(argv: string[]): CliOptions {
   let hydrateImport: string | undefined;
   let clientConfig: string | undefined;
 
-  for (let i = 1; i < args.length; i++) {
+  for (let i = optionStart; i < args.length; i++) {
     const arg = args[i];
     const next = args[i + 1];
     switch (arg) {
@@ -120,6 +126,7 @@ function parseArgs(argv: string[]): CliOptions {
 
   return {
     command,
+    adapterName: adapterName as CliOptions["adapterName"],
     root: resolve(root),
     appDir: resolve(root, appDir),
     islandsDir: resolve(root, islandsDir),
@@ -139,10 +146,11 @@ function printHelp(): void {
 nix-js-kit <command> [options]
 
 Commands:
-  build    Run a static site build
-  dev      Run a development server with rebuild-on-change
-  preview  Serve the static build in production mode
-  start    Run an SSR server that renders pages on demand
+  build            Run a static site build
+  dev              Run a development server with rebuild-on-change
+  preview          Serve the static build in production mode
+  start            Run an SSR server that renders pages on demand
+  adapter <name>   Generate deployment output for a platform (vercel)
 
 Options:
   -r, --root <dir>          Project root (default: cwd)
@@ -357,6 +365,22 @@ function watchFiles(options: CliOptions, server: Server): void {
   process.on("SIGTERM", cleanup);
 }
 
+async function doAdapter(options: CliOptions): Promise<void> {
+  if (options.adapterName === "vercel") {
+    const { vercelAdapter } = await import("./adapters/vercel");
+    await vercelAdapter.build({
+      root: options.root,
+      appDir: options.appDir,
+      islandsDir: options.islandsDir ?? resolve(options.root, "src/islands"),
+      outDir: options.outDir,
+      clientEntry: options.clientEntry,
+      lang: options.lang,
+      hydrateImport: options.hydrateImport,
+    });
+    console.log("\n  → Vercel output generated at .vercel/output");
+  }
+}
+
 export async function run(argv: string[]): Promise<void> {
   const options = parseArgs(argv);
   if (options.command === "build") {
@@ -365,6 +389,8 @@ export async function run(argv: string[]): Promise<void> {
     await doPreview(options);
   } else if (options.command === "start") {
     await doStart(options);
+  } else if (options.command === "adapter") {
+    await doAdapter(options);
   } else {
     await doDev(options);
   }

@@ -66,6 +66,7 @@ nix-js-kit build
 nix-js-kit dev
 nix-js-kit preview
 nix-js-kit start
+nix-js-kit adapter vercel
 ```
 
 By default it looks for `src/app/` and `src/islands/` and writes to `dist/`:
@@ -110,7 +111,7 @@ Options:
 | `--hydrate-import <spec>` | `@deijose/nix-js-kit/island` | Import path for `hydrateIslands` in generated entry |
 | `--client-config <path>` | — | Vite config used to build the client bundle in dev mode |
 
-## Core features (v0.6)
+## Core features (v0.7)
 
 - **Static site generation (SSG)** from `src/app/` file conventions.
 - **File-based route scanner** — maps `page.ts` files to URLs.
@@ -118,7 +119,8 @@ Options:
 - **Route groups** `(marketing)` — shared layouts without affecting the URL path.
 - **Layout chain** — nested `layout.ts` files wrap pages automatically.
 - **SSR runtime** — `nix-js-kit start` renders pages on demand and serves static assets.
-- **Vite plugin** — `nixKit()` gives a Vite-native dev server with SSR and island entry generation.
+- **Vite plugin** — `nixJsKit()` gives a Vite-native dev server with SSR and island entry generation.
+- **Vercel adapter** — `nix-js-kit adapter vercel` generates `.vercel/output` with static files and an SSR fallback function.
 - **`renderToString` for Nix.js templates** without touching the Nix.js core.
 - **Happy DOM** as a build-time dependency only — the Nix.js client bundle stays dependency-free.
 - **Islands** via `island()` helper — mark interactive components and hydrate them on the client with `hydrateIslands`.
@@ -136,7 +138,8 @@ Options:
 | v0.4 | `generateStaticParams`, route groups, preview server |
 | v0.5 | SSR runtime + adapter-node |
 | v0.6 | Vite plugin + DX improvements |
-| v0.7 | Adapters Vercel/Netlify/Bun + server actions |
+| v0.7 | Vercel adapter + DX improvements |
+| v0.8 | Adapters Netlify/Bun + server actions |
 
 See the full architecture proposal in `docs/nix-js-kit-propuesta-implementacion.md`.
 
@@ -374,6 +377,37 @@ npx vite
 The plugin scans `src/app/`, writes `.nix-js/entry-client.ts` and renders every
 page on demand. For production, keep using `nix-js-kit build` to generate static
 HTML and the client bundle.
+
+### Adapters
+
+Deploy to Vercel with the built-in adapter. First build the site, then generate
+the Vercel output:
+
+```bash
+nix-js-kit build
+nix-js-kit adapter vercel
+```
+
+This produces a `.vercel/output` directory that includes:
+
+- `static/` — the static files from `dist/`.
+- `functions/__nix-kit.func/index.js` — a bundled SSR function for unmatched routes.
+- `config.json` — Vercel Build Output API v3 routing config.
+
+You can also use the adapter programmatically:
+
+```ts
+import { vercelAdapter } from "@deijose/nix-js-kit/adapters/vercel";
+
+await vercelAdapter.build({
+  root: process.cwd(),
+  appDir: "src/app",
+  islandsDir: "src/islands",
+  outDir: "dist",
+  clientEntry: "/_nix-js/entry-client.js",
+  lang: "es",
+});
+```
 
 ### Auto island scan
 

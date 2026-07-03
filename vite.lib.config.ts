@@ -23,6 +23,8 @@ export default defineConfig({
                 index: resolve("src/index.ts"),
                 "island/index": resolve("src/island/index.ts"),
                 "vite/index": resolve("src/vite/index.ts"),
+                "adapters/index": resolve("src/adapters/index.ts"),
+                "adapters/vercel": resolve("src/adapters/vercel.ts"),
             },
             name: "NixJSKit",
             formats: ["es", "cjs"],
@@ -36,6 +38,7 @@ export default defineConfig({
             external: [
                 "@deijose/nix-js",
                 "happy-dom",
+                "vite",
                 /^node:/,
                 "module",
                 "fs",
@@ -50,6 +53,7 @@ export default defineConfig({
                 globals: {
                     "@deijose/nix-js": "NixJS",
                     "happy-dom": "HappyDOM",
+                    "vite": "Vite",
                 },
                 inlineDynamicImports: false,
             },
