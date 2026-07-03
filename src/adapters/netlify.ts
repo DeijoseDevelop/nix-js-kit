@@ -3,23 +3,27 @@ import { join, resolve } from "node:path";
 import { build } from "vite";
 import { scanRoutes } from "../router/route-scanner";
 import type { Adapter } from "./index";
-import { copyStatic, writeSsrEntry } from "./shared";
+import { writeSsrEntry } from "./shared";
 
 /**
- * Vercel adapter for nix-js-kit.
+ * Netlify adapter for nix-js-kit.
  *
- * Produces a `.vercel/output` directory compatible with the Vercel Build Output
- * API (v3). Static files are served from `dist/` and unmatched routes fall back
- * to the SSR function.
+ * Produces the files expected by Netlify Functions v2:
+ *   - `netlify/functions/__nix-kit.mjs` — bundled SSR function.
+ *   - `netlify.toml` — redirects unmatched routes to the function.
+ *
+ * Run this after `nix-js-kit build`. The static files are left in `dist/` and
+ * served directly by Netlify; the function only handles routes that have no
+ * matching static file.
  */
-export const vercelAdapter: Adapter = {
-  name: "vercel",
+export const netlifyAdapter: Adapter = {
+  name: "netlify",
 
   async build(options) {
     const root = resolve(options.root);
     const outDir = resolve(root, options.outDir);
-    const vercelOut = resolve(root, ".vercel/output");
-    const functionsDir = join(vercelOut, "functions", "__nix-kit.func");
+    const netlifyDir = resolve(root, "netlify");
+    const functionsDir = join(netlifyDir, "functions");
     const generatedDir = resolve(root, ".nix-js");
 
     // Verify the production build exists.
@@ -32,19 +36,15 @@ export const vercelAdapter: Adapter = {
     }
 
     // Clean previous adapter output.
-    await rm(vercelOut, { recursive: true, force: true });
-    await mkdir(vercelOut, { recursive: true });
+    await rm(functionsDir, { recursive: true, force: true });
     await mkdir(functionsDir, { recursive: true });
     await mkdir(generatedDir, { recursive: true });
-
-    // Copy static files.
-    await copyStatic(outDir, join(vercelOut, "static"));
 
     // Scan routes and generate a self-contained function entry.
     const appDir = resolve(root, options.appDir);
     const routes = await scanRoutes(appDir);
 
-    const entryPath = resolve(generatedDir, "vercel-index.ts");
+    const entryPath = resolve(generatedDir, "netlify-index.ts");
     await writeSsrEntry(entryPath, routes, options, appDir);
 
     // Bundle the function entry.
@@ -58,7 +58,7 @@ export const vercelAdapter: Adapter = {
         lib: {
           entry: entryPath,
           formats: ["es"],
-          fileName: () => "index.js",
+          fileName: () => "__nix-kit.mjs",
         },
         rollupOptions: {
           external: [],
@@ -70,45 +70,27 @@ export const vercelAdapter: Adapter = {
     });
 
     // Vite SSR lib builds may use the entry file name, so force the expected handler name.
-    const generatedHandler = join(functionsDir, "vercel-index.js");
-    const targetHandler = join(functionsDir, "index.js");
+    const generatedHandler = join(functionsDir, "netlify-index.js");
+    const targetHandler = join(functionsDir, "__nix-kit.mjs");
     try {
       await stat(generatedHandler);
       await rename(generatedHandler, targetHandler);
     } catch {
-      // If the file is already named index.js, nothing to do.
+      // If the file is already named __nix-kit.mjs, nothing to do.
     }
 
-    // Write Vercel function config.
+    // Write Netlify redirects config.
     await writeFile(
-      join(functionsDir, ".vc-config.json"),
-      JSON.stringify(
-        {
-          runtime: "nodejs20.x",
-          handler: "index.js",
-          launcherType: "Nodejs",
-          shouldAddHelpers: true,
-        },
-        null,
-        2,
-      ),
-      "utf8",
-    );
+      join(root, "netlify.toml"),
+      `[build]
+  command = "nix-js-kit build"
+  publish = "dist"
 
-    // Write Vercel root config.
-    await writeFile(
-      join(vercelOut, "config.json"),
-      JSON.stringify(
-        {
-          version: 3,
-          routes: [
-            { handle: "filesystem" },
-            { src: "/(.*)", "dest": "/__nix-kit" },
-          ],
-        },
-        null,
-        2,
-      ),
+[[redirects]]
+  from = "/*"
+  to = "/.netlify/functions/__nix-kit"
+  status = 200
+`,
       "utf8",
     );
   },

@@ -29,3 +29,4 @@ export { createSsrServer, type SsrServer, type SsrServerOptions } from "./ssr/se
 export { run, type CliOptions } from "./cli";
 export type { Adapter, AdapterOptions } from "./adapters/index";
 export { vercelAdapter } from "./adapters/vercel";
+export { netlifyAdapter } from "./adapters/netlify";

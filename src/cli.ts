@@ -22,7 +22,7 @@ import { createSsrServer } from "./ssr/server";
 
 export interface CliOptions {
   command: "build" | "dev" | "preview" | "start" | "adapter";
-  adapterName?: "vercel";
+  adapterName?: "vercel" | "netlify";
   root: string;
   appDir: string;
   islandsDir?: string;
@@ -51,8 +51,12 @@ function parseArgs(argv: string[]): CliOptions {
     throw new Error(`Usage: nix-js-kit <build|dev|preview|start|adapter> [options]`);
   }
   const adapterName = command === "adapter" ? args[1] : undefined;
-  if (command === "adapter" && adapterName !== "vercel") {
-    throw new Error(`Usage: nix-js-kit adapter <vercel> [options]`);
+  if (
+    command === "adapter" &&
+    adapterName !== "vercel" &&
+    adapterName !== "netlify"
+  ) {
+    throw new Error(`Usage: nix-js-kit adapter <vercel|netlify> [options]`);
   }
   const optionStart = command === "adapter" ? 2 : 1;
 
@@ -150,7 +154,7 @@ Commands:
   dev              Run a development server with rebuild-on-change
   preview          Serve the static build in production mode
   start            Run an SSR server that renders pages on demand
-  adapter <name>   Generate deployment output for a platform (vercel)
+  adapter <name>   Generate deployment output for a platform (vercel|netlify)
 
 Options:
   -r, --root <dir>          Project root (default: cwd)
@@ -366,18 +370,23 @@ function watchFiles(options: CliOptions, server: Server): void {
 }
 
 async function doAdapter(options: CliOptions): Promise<void> {
+  const adapterOptions = {
+    root: options.root,
+    appDir: options.appDir,
+    islandsDir: options.islandsDir ?? resolve(options.root, "src/islands"),
+    outDir: options.outDir,
+    clientEntry: options.clientEntry,
+    lang: options.lang,
+    hydrateImport: options.hydrateImport,
+  };
   if (options.adapterName === "vercel") {
     const { vercelAdapter } = await import("./adapters/vercel");
-    await vercelAdapter.build({
-      root: options.root,
-      appDir: options.appDir,
-      islandsDir: options.islandsDir ?? resolve(options.root, "src/islands"),
-      outDir: options.outDir,
-      clientEntry: options.clientEntry,
-      lang: options.lang,
-      hydrateImport: options.hydrateImport,
-    });
+    await vercelAdapter.build(adapterOptions);
     console.log("\n  → Vercel output generated at .vercel/output");
+  } else if (options.adapterName === "netlify") {
+    const { netlifyAdapter } = await import("./adapters/netlify");
+    await netlifyAdapter.build(adapterOptions);
+    console.log("\n  → Netlify output generated at netlify/functions/__nix-kit.mjs");
   }
 }
 

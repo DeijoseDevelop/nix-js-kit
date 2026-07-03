@@ -67,6 +67,7 @@ nix-js-kit dev
 nix-js-kit preview
 nix-js-kit start
 nix-js-kit adapter vercel
+nix-js-kit adapter netlify
 ```
 
 By default it looks for `src/app/` and `src/islands/` and writes to `dist/`:
@@ -121,6 +122,7 @@ Options:
 - **SSR runtime** — `nix-js-kit start` renders pages on demand and serves static assets.
 - **Vite plugin** — `nixJsKit()` gives a Vite-native dev server with SSR and island entry generation.
 - **Vercel adapter** — `nix-js-kit adapter vercel` generates `.vercel/output` with static files and an SSR fallback function.
+- **Netlify adapter** — `nix-js-kit adapter netlify` generates a Netlify Functions v2 SSR function and `netlify.toml`.
 - **`renderToString` for Nix.js templates** without touching the Nix.js core.
 - **Happy DOM** as a build-time dependency only — the Nix.js client bundle stays dependency-free.
 - **Islands** via `island()` helper — mark interactive components and hydrate them on the client with `hydrateIslands`.
@@ -139,7 +141,7 @@ Options:
 | v0.5 | SSR runtime + adapter-node |
 | v0.6 | Vite plugin + DX improvements |
 | v0.7 | Vercel adapter + DX improvements |
-| v0.8 | Adapters Netlify/Bun + server actions |
+| v0.8 | Netlify adapter + Bun adapter + server actions |
 
 See the full architecture proposal in `docs/nix-js-kit-propuesta-implementacion.md`.
 
@@ -400,6 +402,35 @@ You can also use the adapter programmatically:
 import { vercelAdapter } from "@deijose/nix-js-kit/adapters/vercel";
 
 await vercelAdapter.build({
+  root: process.cwd(),
+  appDir: "src/app",
+  islandsDir: "src/islands",
+  outDir: "dist",
+  clientEntry: "/_nix-js/entry-client.js",
+  lang: "es",
+});
+```
+
+### Netlify adapter
+
+Deploy to Netlify with the built-in adapter:
+
+```bash
+nix-js-kit build
+nix-js-kit adapter netlify
+```
+
+This produces:
+
+- `netlify/functions/__nix-kit.mjs` — bundled SSR function for Netlify Functions v2.
+- `netlify.toml` — redirects unmatched routes to the function.
+
+The static files stay in `dist/` and are served directly by Netlify. Programmatic usage:
+
+```ts
+import { netlifyAdapter } from "@deijose/nix-js-kit/adapters/netlify";
+
+await netlifyAdapter.build({
   root: process.cwd(),
   appDir: "src/app",
   islandsDir: "src/islands",

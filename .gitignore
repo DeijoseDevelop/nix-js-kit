@@ -32,6 +32,8 @@ coverage/
 # Example output
 example/dist/
 example/.vercel/
+example/netlify/
+example/netlify.toml
 
 # Auto-generated client entry
 **/.nix-js/

@@ -2,6 +2,19 @@
 
 All notable changes to `@deijose/nix-js-kit` will be documented in this file.
 
+## 0.8.0
+
+### Added
+
+- Netlify adapter: `nix-js-kit adapter netlify` generates a Netlify Functions v2 SSR function and `netlify.toml`.
+- New subpath export `@deijose/nix-js-kit/adapters/netlify`.
+- Shared adapter helpers in `src/adapters/shared.ts` used by both Vercel and Netlify adapters.
+
+### Changed
+
+- CLI `adapter` command now accepts `vercel` and `netlify`.
+- README updated with Netlify adapter instructions and roadmap v0.8.
+
 ## 0.7.0
 
 ### Added
