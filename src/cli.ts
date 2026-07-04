@@ -42,6 +42,10 @@ export interface CliOptions {
    * In dev mode it is rebuilt whenever source files change.
    */
   clientConfig?: string;
+  /** Absolute path to the ISR cache directory. */
+  cacheDir?: string;
+  /** Default revalidate interval in seconds for ISR. */
+  defaultRevalidate?: number;
 }
 
 function parseArgs(argv: string[]): CliOptions {
@@ -77,6 +81,8 @@ function parseArgs(argv: string[]): CliOptions {
   let lang = "es";
   let hydrateImport: string | undefined;
   let clientConfig: string | undefined;
+  let cacheDir: string | undefined;
+  let defaultRevalidate: number | undefined;
 
   for (let i = optionStart; i < args.length; i++) {
     const arg = args[i];
@@ -125,6 +131,14 @@ function parseArgs(argv: string[]): CliOptions {
         clientConfig = next;
         i++;
         break;
+      case "--cache-dir":
+        cacheDir = next;
+        i++;
+        break;
+      case "--default-revalidate":
+        defaultRevalidate = Number(next);
+        i++;
+        break;
       case "--help":
       case "-?":
         printHelp();
@@ -148,6 +162,8 @@ function parseArgs(argv: string[]): CliOptions {
     lang,
     hydrateImport,
     clientConfig: clientConfig ? resolve(root, clientConfig) : undefined,
+    cacheDir: cacheDir ? resolve(root, cacheDir) : undefined,
+    defaultRevalidate,
   };
 }
 
@@ -172,6 +188,8 @@ Options:
   -l, --lang <lang>         HTML lang attribute (default: es)
   --hydrate-import <spec>   Import specifier for hydrateIslands in generated entry
   --client-config <path>    Vite config used to build the client hydration bundle
+  --cache-dir <dir>         Directory for ISR cache (only used by start)
+  --default-revalidate <s>  Default ISR revalidate interval in seconds
 `);
 }
 
@@ -260,6 +278,8 @@ async function doStart(options: CliOptions): Promise<void> {
     lang: options.lang,
     port: options.port,
     host: options.host,
+    cacheDir: options.cacheDir,
+    defaultRevalidate: options.defaultRevalidate,
   });
   await ssr.listen();
 }

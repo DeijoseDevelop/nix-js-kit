@@ -4,6 +4,7 @@ import { extname, join } from "node:path";
 import { scanRoutes } from "../router/route-scanner";
 import { scanActions } from "../action/scan";
 import { handleActionRequest } from "../action/server";
+import { getCachedHtml, setCachedHtml } from "../cache";
 import { matchApiRoute, matchRoute } from "./match";
 import { renderPage, renderErrorPage } from "./render";
 
@@ -18,6 +19,10 @@ export interface SsrServerOptions {
   lang?: string;
   port?: number;
   host?: string;
+  /** Absolute path to the ISR cache directory (optional). */
+  cacheDir?: string;
+  /** Default revalidate interval in seconds when a page does not export one. */
+  defaultRevalidate?: number;
 }
 
 export interface SsrServer {
@@ -124,13 +129,35 @@ export async function createSsrServer(options: SsrServerOptions): Promise<SsrSer
     const config = { lang: options.lang ?? "es", clientEntry: options.clientEntry };
     if (match) {
       try {
-        const html = await renderPage({
-          route: match.route,
-          params: match.params,
-          searchParams: match.searchParams,
-          config,
-          actions,
-        });
+        let html: string;
+        const revalidate = match.route.dataPath
+          ? ((await import(match.route.dataPath)) as { revalidate?: number }).revalidate
+          : undefined;
+        const ttl = revalidate ?? options.defaultRevalidate;
+        if (options.cacheDir && typeof ttl === "number") {
+          const cached = await getCachedHtml(options.cacheDir, urlPath);
+          if (cached) {
+            html = cached.html;
+          } else {
+            const result = await renderPage({
+              route: match.route,
+              params: match.params,
+              searchParams: match.searchParams,
+              config,
+              actions,
+            });
+            html = result.html;
+            await setCachedHtml(options.cacheDir, urlPath, html, ttl);
+          }
+        } else {
+          html = (await renderPage({
+            route: match.route,
+            params: match.params,
+            searchParams: match.searchParams,
+            config,
+            actions,
+          })).html;
+        }
         res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
         res.end(html);
         return;

@@ -170,7 +170,7 @@ export default async function handler(request: Request): Promise<Response> {
   }
 
   try {
-    const html = await renderPage({
+    const { html } = await renderPage({
       route: match.route,
       params: match.params,
       searchParams: match.searchParams,

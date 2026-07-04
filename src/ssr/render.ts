@@ -8,8 +8,8 @@ import type { ActionRegistry } from "../action/scan";
 
 export interface RenderPageOptions {
   route: PageRoute;
-  params: RouteParams;
-  searchParams: URLSearchParams;
+  params?: RouteParams;
+  searchParams?: URLSearchParams;
   config: Pick<BuildConfig, "lang" | "clientEntry">;
   /** Custom module loader. Defaults to native dynamic import. */
   importer?: (path: string) => Promise<unknown>;
@@ -17,20 +17,29 @@ export interface RenderPageOptions {
   actions?: ActionRegistry;
 }
 
+export interface RenderPageResult {
+  html: string;
+  revalidate?: number;
+}
+
 const defaultImport = (path: string) => import(path);
 
-export async function renderPage(options: RenderPageOptions): Promise<string> {
-  const { route, params, searchParams, config, importer = defaultImport, actions } = options;
+export async function renderPage(options: RenderPageOptions): Promise<RenderPageResult> {
+  const { route, params = {}, searchParams = new URLSearchParams(), config, importer = defaultImport, actions } = options;
 
   const { default: PageComponent } = await importer(route.pagePath) as {
     default: (props: PageProps<unknown>) => NixTemplate;
   };
 
   let data: unknown;
+  let revalidate: number | undefined;
   if (route.dataPath) {
-    const { load } = await importer(route.dataPath) as { load?: PageDataLoad };
-    if (load) {
-      data = await load({ params, searchParams });
+    const mod = await importer(route.dataPath) as { load?: PageDataLoad; revalidate?: number };
+    if (mod.load) {
+      data = await mod.load({ params, searchParams });
+    }
+    if (typeof mod.revalidate === "number") {
+      revalidate = mod.revalidate;
     }
   }
 
@@ -59,7 +68,7 @@ export async function renderPage(options: RenderPageOptions): Promise<string> {
     ? String((data as { title?: unknown }).title ?? "Nix Kit")
     : "Nix Kit";
 
-  return documentShell({
+  const html = documentShell({
     title,
     lang: config.lang,
     body,
@@ -67,6 +76,8 @@ export async function renderPage(options: RenderPageOptions): Promise<string> {
     actions,
     clientEntry: config.clientEntry,
   });
+
+  return { html, revalidate };
 }
 
 export interface RenderErrorPageOptions {
@@ -85,7 +96,7 @@ export async function renderErrorPage(
   if (!route) return undefined;
 
   try {
-    const html = await renderPage({
+    const { html } = await renderPage({
       route,
       params: {},
       searchParams: new URLSearchParams(),

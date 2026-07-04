@@ -7,3 +7,5 @@ export interface HomeData {
 export const load: PageDataLoad<HomeData> = async () => {
   return { title: "Hello from test" };
 };
+
+export const revalidate = 60;

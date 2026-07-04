@@ -2,6 +2,16 @@
 
 All notable changes to `@deijose/nix-js-kit` will be documented in this file.
 
+## 1.1.0
+
+### Added
+
+- ISR (Incremental Static Regeneration) with disk-based cache.
+- `revalidate` export support in `page.data.ts`.
+- `cacheDir` and `defaultRevalidate` options for `createSsrServer` and `nix-js-kit start`.
+- Cache helpers exported: `getCachedHtml`, `setCachedHtml`, `clearCache`.
+- `renderPage` now returns `{ html, revalidate? }`.
+
 ## 1.0.0
 
 ### Added

@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { build } from "../src/build/build.ts";
 import { createSsrServer } from "../src/ssr/server.ts";
 import { mkdir, rm, readFile } from "node:fs/promises";
+import { getCachedHtml } from "../src/cache.ts";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
 
@@ -71,6 +72,32 @@ describe("integration: build + SSR", () => {
       });
       assert.equal(apiPost.status, 201);
       assert.deepEqual(await apiPost.json(), { id: 2, title: "New" });
+    } finally {
+      await server.close();
+    }
+  });
+
+  it("caches pages with revalidate in ISR cache", async () => {
+    const cacheDir = resolve(root, ".nix-js/cache");
+    await rm(cacheDir, { recursive: true, force: true });
+    const server = await createSsrServer({
+      appDir,
+      cacheDir,
+      port: 0,
+    });
+    await server.listen();
+    const { port } = server.server.address() as { port: number };
+
+    try {
+      const page = await fetch(`http://127.0.0.1:${port}/`);
+      assert.equal(page.status, 200);
+      const body = await page.text();
+      assert.ok(body.includes("<h1>Hello from test</h1>"), "SSR should render home page");
+
+      const cached = await getCachedHtml(cacheDir, "/");
+      assert.ok(cached, "page should be cached");
+      assert.ok(cached.html.includes("<h1>Hello from test</h1>"), "cached HTML should match");
+      assert.equal(cached.revalidate, 60, "revalidate should be 60 seconds");
     } finally {
       await server.close();
     }

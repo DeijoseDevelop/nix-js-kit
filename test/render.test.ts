@@ -14,7 +14,7 @@ describe("renderPage", () => {
     const routes = await scanRoutes(appDir);
     const actions = await scanActions(appDir);
     const home = routes.pages.find((p) => p.path === "/")!;
-    const html = await renderPage({
+    const { html } = await renderPage({
       route: home,
       config: { clientEntry: "/_nix-js/entry-client.js", lang: "es" },
       actions,
@@ -28,7 +28,7 @@ describe("renderPage", () => {
     const routes = await scanRoutes(appDir);
     const actions = await scanActions(appDir);
     const blog = routes.pages.find((p) => p.path === "/blog/:slug")!;
-    const html = await renderPage({
+    const { html } = await renderPage({
       route: blog,
       params: { slug: "hello-world" },
       config: { clientEntry: "/_nix-js/entry-client.js", lang: "es" },

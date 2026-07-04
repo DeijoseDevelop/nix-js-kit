@@ -287,7 +287,7 @@ async function handleSsrRequest(
   const match = matchRoute(urlPath, options.routes.pages);
   if (match) {
     try {
-      const html = await renderPage({
+      const { html } = await renderPage({
         route: match.route,
         params: match.params,
         searchParams: match.searchParams,

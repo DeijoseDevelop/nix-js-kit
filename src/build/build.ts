@@ -202,7 +202,7 @@ async function buildConcretePage(
   params: RouteParams,
   actions: ActionRegistry,
 ): Promise<string> {
-  const htmlOut = await renderPage({
+  const { html: htmlOut } = await renderPage({
     route,
     params,
     searchParams: new URLSearchParams(),
