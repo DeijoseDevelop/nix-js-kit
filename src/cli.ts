@@ -4,10 +4,11 @@ import { extname, join, resolve, relative } from "node:path";
 import { watch } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { build, type BuildConfig } from "./build/build";
+import { transformProjectFiles } from "./build/transform-source";
 import { createSsrServer } from "./ssr/server";
 import { scanActions } from "./action/scan";
 import { scanRoutes } from "./router/route-scanner";
-import { matchApiRoute } from "./ssr/match";
+import { matchRoute, matchApiRoute } from "./ssr/match";
 import { handleActionRequest } from "./action/server";
 
 // =============================================================================
@@ -206,7 +207,26 @@ function toBuildConfig(options: CliOptions): BuildConfig {
 }
 
 async function doBuild(options: CliOptions): Promise<void> {
-  const result = await build(toBuildConfig(options));
+  const transformedDir = join(options.root, ".nix-js", "transformed", "src", "app");
+  await transformProjectFiles({
+    root: options.root,
+    appDir: options.appDir,
+    islandsDir: options.islandsDir,
+    outDir: transformedDir,
+  });
+  const buildConfig = toBuildConfig(options);
+  buildConfig.appDir = transformedDir;
+  const result = await build(buildConfig);
+
+  if (options.islandsDir && !options.clientConfig) {
+    const autoConfig = await findClientConfig(options.root);
+    if (autoConfig) {
+      options.clientConfig = autoConfig;
+    }
+  }
+  if (options.clientConfig) {
+    buildClient(options);
+  }
 
   console.log(`✓ Build completo: ${result.pages} páginas generadas`);
   for (const file of result.files) {
@@ -235,8 +255,16 @@ async function doDev(options: CliOptions): Promise<void> {
     buildClient(options);
   }
 
-  const actions = await scanActions(options.appDir);
-  const routes = await scanRoutes(options.appDir);
+  const transformedDir = join(options.root, ".nix-js", "transformed", "src", "app");
+  await transformProjectFiles({
+    root: options.root,
+    appDir: options.appDir,
+    islandsDir: options.islandsDir,
+    outDir: transformedDir,
+  });
+
+  const actions = await scanActions(transformedDir);
+  const routes = await scanRoutes(transformedDir);
   const server = createServer((req, res) => handleRequest(req, res, options, actions, routes));
   server.listen(options.port, options.host, () => {
     console.log(`\n  → Dev server http://${options.host}:${options.port}`);
@@ -261,8 +289,16 @@ export async function doPreview(options: CliOptions): Promise<import("node:http"
     throw err;
   }
 
-  const actions = await scanActions(options.appDir);
-  const routes = await scanRoutes(options.appDir);
+  const transformedDir = join(options.outDir, ".nix-js-transformed", "src", "app");
+  await transformProjectFiles({
+    root: options.root,
+    appDir: options.appDir,
+    islandsDir: options.islandsDir,
+    outDir: transformedDir,
+  });
+
+  const actions = await scanActions(transformedDir);
+  const routes = await scanRoutes(transformedDir);
   const server = createServer((req, res) => handleRequest(req, res, options, actions, routes));
   server.listen(options.port, options.host, () => {
     console.log(`\n  → Preview server http://${options.host}:${options.port}`);
@@ -271,8 +307,16 @@ export async function doPreview(options: CliOptions): Promise<import("node:http"
 }
 
 async function doStart(options: CliOptions): Promise<void> {
-  const ssr = await createSsrServer({
+  const transformedDir = join(options.root, ".nix-js", "transformed", "src", "app");
+  await transformProjectFiles({
+    root: options.root,
     appDir: options.appDir,
+    islandsDir: options.islandsDir,
+    outDir: transformedDir,
+  });
+
+  const ssr = await createSsrServer({
+    appDir: transformedDir,
     publicDir: options.outDir,
     clientEntry: options.clientEntry,
     lang: options.lang,
@@ -282,6 +326,19 @@ async function doStart(options: CliOptions): Promise<void> {
     defaultRevalidate: options.defaultRevalidate,
   });
   await ssr.listen();
+}
+
+async function findClientConfig(root: string): Promise<string | undefined> {
+  const candidates = ["vite.client.config.ts", "vite.client.config.js", "vite.client.config.mjs"];
+  for (const name of candidates) {
+    const path = resolve(root, name);
+    try {
+      if ((await stat(path)).isFile()) return path;
+    } catch {
+      // ignore
+    }
+  }
+  return undefined;
 }
 
 function buildClient(options: CliOptions): void {
@@ -331,6 +388,30 @@ async function handleRequest(
     return;
   }
 
+  // Render endpoint used by the client-side router for SPA navigation.
+  if (urlPath === "/__nix-js/render") {
+    try {
+      const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`);
+      const page = url.searchParams.get("page") ?? "/";
+      const search = url.searchParams.get("search") ?? "";
+      const { renderPageBody } = await import("./ssr/stream");
+      const html = await renderPageBody({
+        routes,
+        pathname: page,
+        searchParams: new URLSearchParams(search),
+        config: { lang: options.lang, clientEntry: options.clientEntry },
+        actions,
+      });
+      res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+      res.end(html);
+    } catch (err) {
+      console.error("[nix-js-kit] render endpoint error:", err);
+      res.writeHead(500, { "Content-Type": "text/plain; charset=utf-8" });
+      res.end(String(err));
+    }
+    return;
+  }
+
   // API routes.
   const apiMatch = matchApiRoute(urlPath, routes.api);
   if (apiMatch) {
@@ -364,6 +445,7 @@ async function handleRequest(
     return;
   }
 
+  const originalPath = urlPath;
   if (urlPath.endsWith("/")) urlPath += "index.html";
   if (extname(urlPath) === "") urlPath += "/index.html";
   if (urlPath.startsWith("/")) urlPath = urlPath.slice(1);
@@ -375,15 +457,38 @@ async function handleRequest(
     const contentType = guessContentType(filePath);
     res.writeHead(200, { "Content-Type": contentType });
     res.end(data);
+    return;
   } catch (err) {
     const code = (err as NodeJS.ErrnoException).code;
-    if (code === "ENOENT" || code === "EISDIR") {
-      res.writeHead(404, { "Content-Type": "text/plain; charset=utf-8" });
-      res.end(`Not found: ${req.url}`);
-    } else {
+    if (code !== "ENOENT" && code !== "EISDIR") {
       res.writeHead(500, { "Content-Type": "text/plain; charset=utf-8" });
       res.end(String(err));
+      return;
     }
+  }
+
+  // Fallback: try to render the route dynamically (e.g. for slugs not generated as static files).
+  try {
+    const { renderPage } = await import("./ssr/render");
+    const match = matchRoute(originalPath, routes.pages);
+    if (!match) {
+      res.writeHead(404, { "Content-Type": "text/plain; charset=utf-8" });
+      res.end(`Not found: ${req.url}`);
+      return;
+    }
+    const result = await renderPage({
+      route: match.route,
+      params: match.params,
+      searchParams: new URLSearchParams(req.url?.split("?")[1] ?? ""),
+      config: { lang: options.lang, clientEntry: options.clientEntry },
+      actions,
+    });
+    res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+    res.end(result.html);
+  } catch (err) {
+    console.error("[nix-js-kit] preview fallback render error:", err);
+    res.writeHead(500, { "Content-Type": "text/plain; charset=utf-8" });
+    res.end(String(err));
   }
 }
 

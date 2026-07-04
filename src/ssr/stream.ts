@@ -94,5 +94,6 @@ export async function renderPageBody(options: RenderPageBodyOptions): Promise<st
     importer,
   });
 
-  return result.html;
+  const bodyMatch = result.html.match(/<div id="app">([\s\S]*)<\/div>\s*(<script|$)/);
+  return bodyMatch ? bodyMatch[1].trim() : result.html;
 }

@@ -3,7 +3,7 @@
 [![npm version](https://img.shields.io/npm/v/@deijose/nix-js-kit.svg)](https://www.npmjs.com/package/@deijose/nix-js-kit)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 
-> Full-stack meta-framework for Nix.js — file-based routing, SSG, and islands. Zero extra runtime dependencies on the client: Nix.js stays at ~14KB.
+> Full-stack meta-framework for Nix.js — file-based routing, SSG, SSR, ISR, islands, and SPA-like navigation. Zero extra runtime dependencies on the client: Nix.js stays at ~14KB.
 
 ## What is Nix Kit?
 
@@ -84,8 +84,10 @@ nix-js-kit build
 Run the dev server with rebuild-on-change:
 
 ```bash
-nix-js-kit dev --client-config vite.client.config.ts
+nix-js-kit dev
 ```
+
+If you have a `vite.client.config.ts`, the client hydration bundle is built automatically. You can still pass an explicit config with `--client-config <path>`.
 
 Serve the production build:
 
@@ -101,6 +103,12 @@ nix-js-kit build          # generate or update the client bundle
 nix-js-kit start
 ```
 
+Enable ISR with a cache directory and default TTL:
+
+```bash
+nix-js-kit start --cache-dir .nix-js/cache --default-revalidate 60
+```
+
 Options:
 
 | Flag | Default | Description |
@@ -113,21 +121,22 @@ Options:
 | `-h, --host <address>` | `127.0.0.1` | Server host |
 | `-l, --lang <lang>` | `es` | HTML `lang` attribute |
 | `--hydrate-import <spec>` | `@deijose/nix-js-kit/island` | Import path for `hydrateIslands` in generated entry |
-| `--client-config <path>` | — | Vite config used to build the client bundle in dev mode |
+| `--client-config <path>` | `vite.client.config.ts` (auto-detected) | Vite config used to build the client bundle in dev mode |
 
-## Core features (v0.7)
+## Core features (v1.2)
 
 - **Static site generation (SSG)** from `src/app/` file conventions.
 - **File-based route scanner** — maps `page.ts` files to URLs.
-- **Dynamic routes** with `generateStaticParams` — generate static HTML for `[slug]` and `[...slug]` routes.
+- **Dynamic routes** with `generateStaticParams` — generate static HTML for `[slug]` and `[...slug]` routes, with SSR fallback for slugs not generated at build time.
 - **Route groups** `(marketing)` — shared layouts without affecting the URL path.
 - **Layout chain** — nested `layout.ts` files wrap pages automatically.
 - **SSR runtime** — `nix-js-kit start` renders pages on demand and serves static assets.
+- **ISR** — incremental static regeneration with disk cache and TTL (`revalidate`).
+- **Streaming boundaries** — `loading.ts` shells render instantly and fetch real content from `/__nix-js/render`.
+- **SPA-like navigation** — built-in client router intercepts internal links, fetches page bodies, and swaps `#app` without full reloads.
+- **Attribute interpolation plugin** — write natural `href="/blog/${slug}"` and the kit transforms it into a single Nix.js interpolation at build time.
 - **Vite plugin** — `nixJsKit()` gives a Vite-native dev server with SSR and island entry generation.
-- **Vercel adapter** — `nix-js-kit adapter vercel` generates `.vercel/output` with static files and an SSR fallback function.
-- **Netlify adapter** — `nix-js-kit adapter netlify` generates a Netlify Functions v2 SSR function and `netlify.toml`.
-- **Bun adapter** — `nix-js-kit adapter bun` generates a Bun server entry that serves static files and renders pages on demand.
-- **Node adapter** — `nix-js-kit adapter node` generates a self-contained Node server.
+- **Vercel, Netlify, Bun and Node adapters** for deployment.
 - **Custom error pages** — `src/app/404.page.ts` and `src/app/500.page.ts` are rendered for 404/500 responses in SSG, SSR, and all adapters.
 - **Server actions** — define `page.action.ts` files next to `page.ts` and call them from the client with `nixAction()` or `callAction()`.
 - **Scoped actions** — actions are registered per page path, so names only collide if they are in the same route.
@@ -138,6 +147,13 @@ Options:
 - **Auto island scan** — `build()` scans `src/islands/` and generates the client hydration entry for you.
 - **Document shell** with serialized loader data (`<script id="nix-js-data">`).
 - **CLI** (`nix-js-kit build` / `nix-js-kit dev` / `nix-js-kit preview` / `nix-js-kit start`).
+
+## What's new in v1.2
+
+- **Automatic attribute interpolation** — no more manual workarounds for `href="/blog/${slug}"`. The kit rewrites partial interpolations into valid Nix.js single interpolations during build, dev, start, and preview.
+- **Inline client router** — every page shell ships a lightweight router that intercepts internal links, fetches the rendered body from `/__nix-js/render`, and updates the DOM + history. Works in `preview` and `start`.
+- **SSR fallback in preview** — `preview` now renders dynamic routes on demand when a static file is missing, so slugs work even without `generateStaticParams`.
+- **Auto client bundle build** — when `vite.client.config.ts` is present, `build` and `dev` build the hydration bundle automatically; no `--client-config` flag is required.
 
 ## Roadmap
 
@@ -153,6 +169,8 @@ Options:
 | v0.8 | Netlify adapter + Bun adapter |
 | v0.9 | Server actions ✅ |
 | v1.0 | Stabilization: test suite, error handling ✅, Node adapter ✅, and action DX ✅ |
+| v1.1 | Streaming boundaries + ISR ✅ |
+| v1.2 | Interpolation plugin, SPA router, preview SSR fallback ✅ |
 
 ## API
 

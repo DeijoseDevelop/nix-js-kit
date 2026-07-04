@@ -8,6 +8,7 @@ import { scanIslands } from "../island/scan";
 import { buildEntrySource } from "../island/generate-entry";
 import { matchApiRoute, matchRoute } from "../ssr/match";
 import { renderPage, renderErrorPage } from "../ssr/render";
+import { nixJsInterpolationPlugin } from "./interpolation-plugin";
 
 export interface NixJsKitViteOptions {
   /** App directory relative to Vite root (default: src/app). */
@@ -31,7 +32,7 @@ export interface NixJsKitViteOptions {
  * In production builds it can be combined with `nix-js-kit build` to generate
  * static HTML files.
  */
-export function nixJsKit(options: NixJsKitViteOptions = {}): Plugin {
+export function nixJsKit(options: NixJsKitViteOptions = {}): Plugin[] {
   const appDir = options.appDir ?? "src/app";
   const islandsDir = options.islandsDir ?? "src/islands";
   const generatedEntry = options.generatedEntry ?? ".nix-js/entry-client.ts";
@@ -43,7 +44,7 @@ export function nixJsKit(options: NixJsKitViteOptions = {}): Plugin {
   let actions: ActionRegistry = {};
   let root: string = ".";
 
-  return {
+  const mainPlugin: Plugin = {
     name: "nix-js-kit",
     enforce: "pre",
 
@@ -160,6 +161,8 @@ export function nixJsKit(options: NixJsKitViteOptions = {}): Plugin {
       });
     },
   };
+
+  return [mainPlugin, nixJsInterpolationPlugin({ appDir, islandsDir })];
 }
 
 function setupHmr(

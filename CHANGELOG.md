@@ -2,6 +2,16 @@
 
 All notable changes to `@deijose/nix-js-kit` will be documented in this file.
 
+## 1.2.0
+
+### Added
+
+- Vite interpolation plugin transforms partial attribute interpolations (`href="/blog/${slug}"`) into single Nix.js interpolations automatically.
+- Source transformation runs before build/dev/start/preview so authors can write natural `href` attributes without manual workarounds.
+- Inline client-side router in the HTML shell: intercepts internal link clicks, fetches page body from `/__nix-js/render`, swaps `#app` and updates `history.pushState`.
+- `preview` server falls back to on-demand SSR for routes that do not exist in the static `dist/` (e.g. dynamic slugs).
+- Client hydration bundle is built automatically when a `vite.client.config.ts` exists.
+
 ## 1.1.1
 
 ### Added
