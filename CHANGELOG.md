@@ -2,6 +2,14 @@
 
 All notable changes to `@deijose/nix-js-kit` will be documented in this file.
 
+## 0.11.5
+
+### Added
+
+- Integration tests for Vercel and Netlify adapters: build handlers and verify SSR responses.
+- Integration test for Bun adapter: build server entry and verify it serves SSR with `bun run`.
+- Cleanup hooks for Vercel/Netlify/Bun adapter tests.
+
 ## 0.11.4
 
 ### Added
