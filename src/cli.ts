@@ -6,7 +6,7 @@ import { spawnSync } from "node:child_process";
 import { build, type BuildConfig } from "./build/build";
 import { transformProjectFiles } from "./build/transform-source";
 import { createSsrServer } from "./ssr/server";
-import { scanActions, relativeActions } from "./action/scan";
+import { scanActions, actionNames } from "./action/scan";
 import { scanRoutes } from "./router/route-scanner";
 import { matchRoute, matchApiRoute } from "./ssr/match";
 import { handleActionRequest } from "./action/server";
@@ -38,6 +38,7 @@ export interface CliOptions {
   host: string;
   lang: string;
   hydrateImport?: string;
+  routerImport?: string;
   /**
    * Path to a Vite config used to build the client hydration bundle.
    * In dev mode it is rebuilt whenever source files change.
@@ -81,6 +82,7 @@ function parseArgs(argv: string[]): CliOptions {
   let host = "127.0.0.1";
   let lang = "es";
   let hydrateImport: string | undefined;
+  let routerImport: string | undefined;
   let clientConfig: string | undefined;
   let cacheDir: string | undefined;
   let defaultRevalidate: number | undefined;
@@ -128,6 +130,10 @@ function parseArgs(argv: string[]): CliOptions {
         hydrateImport = next;
         i++;
         break;
+      case "--router-import":
+        routerImport = next;
+        i++;
+        break;
       case "--client-config":
         clientConfig = next;
         i++;
@@ -162,6 +168,7 @@ function parseArgs(argv: string[]): CliOptions {
     host,
     lang,
     hydrateImport,
+    routerImport,
     clientConfig: clientConfig ? resolve(root, clientConfig) : undefined,
     cacheDir: cacheDir ? resolve(root, cacheDir) : undefined,
     defaultRevalidate,
@@ -188,6 +195,7 @@ Options:
   -h, --host <address>      Server host (default: 127.0.0.1)
   -l, --lang <lang>         HTML lang attribute (default: es)
   --hydrate-import <spec>   Import specifier for hydrateIslands in generated entry
+  --router-import <spec>    Import specifier for startClientRouter in generated entry
   --client-config <path>    Vite config used to build the client hydration bundle
   --cache-dir <dir>         Directory for ISR cache (only used by start)
   --default-revalidate <s>  Default ISR revalidate interval in seconds
@@ -204,6 +212,7 @@ function toBuildConfig(options: CliOptions): BuildConfig {
     islandsDir: options.islandsDir,
     generatedEntry: options.generatedEntry,
     hydrateImport: options.hydrateImport,
+    routerImport: options.routerImport,
   };
 }
 
@@ -362,7 +371,7 @@ async function handleRequest(
   actions: import("./action/scan").ActionRegistry,
   routes: import("./router/route-scanner").ScannedRoutes,
 ): Promise<void> {
-  const publicActions = options.root ? relativeActions(actions, options.root) : actions;
+  const publicActions = actionNames(actions);
   let urlPath = req.url ?? "/";
   if (urlPath.includes("?")) urlPath = urlPath.split("?")[0];
 

@@ -3,7 +3,6 @@ import { renderToString } from "../render/render-to-string";
 import { documentShell } from "../build/document-shell";
 import type { PageRoute, ScannedRoutes } from "../router/route-scanner";
 import type { BuildConfig } from "../build/build";
-import type { ActionRegistry } from "../action/scan";
 import { matchRoute } from "./match";
 import { renderPage } from "./render";
 
@@ -13,7 +12,7 @@ export interface StreamingPageOptions {
   searchParams: URLSearchParams;
   config: Pick<BuildConfig, "lang" | "clientEntry">;
   importer?: (path: string) => Promise<unknown>;
-  actions?: ActionRegistry;
+  actions?: Record<string, string[]>;
 }
 
 const defaultImport = (path: string) => import(path);
@@ -70,7 +69,7 @@ export interface RenderPageBodyOptions {
   pathname: string;
   searchParams: URLSearchParams;
   config: Pick<BuildConfig, "lang" | "clientEntry">;
-  actions?: ActionRegistry;
+  actions?: Record<string, string[]>;
   importer?: (path: string) => Promise<unknown>;
 }
 

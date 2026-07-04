@@ -66,18 +66,18 @@ export async function buildSsrEntry(
     })
     .join("\n");
 
-  const actionsRegistry: Record<string, Record<string, string>> = {};
+  const actionsRegistry: Record<string, string[]> = {};
   for (const page of routes.pages) {
     if (!page.actionPath) continue;
     const mod = (await import(page.actionPath)) as Record<string, unknown>;
-    const names: Record<string, string> = {};
+    const names: string[] = [];
     for (const [name, value] of Object.entries(mod)) {
       if (name === "default") continue;
       if (typeof value === "function") {
-        names[name] = page.actionPath;
+        names.push(name);
       }
     }
-    if (Object.keys(names).length > 0) {
+    if (names.length > 0) {
       actionsRegistry[page.path] = names;
     }
   }

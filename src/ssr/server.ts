@@ -2,7 +2,7 @@ import { createServer, type IncomingMessage, type Server } from "node:http";
 import { readFile, stat } from "node:fs/promises";
 import { extname, join } from "node:path";
 import { scanRoutes } from "../router/route-scanner";
-import { scanActions, relativeActions } from "../action/scan";
+import { scanActions, actionNames } from "../action/scan";
 import { handleActionRequest } from "../action/server";
 import { getCachedHtml, setCachedHtml } from "../cache";
 import { matchApiRoute, matchRoute } from "./match";
@@ -43,7 +43,7 @@ export interface SsrServer {
 export async function createSsrServer(options: SsrServerOptions): Promise<SsrServer> {
   const routes = await scanRoutes(options.appDir);
   const actions = await scanActions(options.appDir);
-  const publicActions = options.root ? relativeActions(actions, options.root) : actions;
+  const publicActions = actionNames(actions);
 
   const resolveAction = async (name: string, page?: string) => {
     const pageActions = page ? actions[page] : Object.values(actions).find((p) => p[name]) ?? undefined;

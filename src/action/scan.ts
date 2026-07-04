@@ -56,3 +56,16 @@ export function relativeActions(actions: ActionRegistry, root: string): ActionRe
   }
   return result;
 }
+
+/**
+ * Return only the names of available actions per page, without file paths.
+ * This is the safe format to serialize into the HTML shell: the client only
+ * needs to know which actions exist, never where they are implemented.
+ */
+export function actionNames(actions: ActionRegistry): Record<string, string[]> {
+  const result: Record<string, string[]> = {};
+  for (const [page, pageActions] of Object.entries(actions)) {
+    result[page] = Object.keys(pageActions);
+  }
+  return result;
+}

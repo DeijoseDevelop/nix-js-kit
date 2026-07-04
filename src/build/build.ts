@@ -4,7 +4,7 @@ import { scanRoutes, type PageRoute, type ScannedRoutes } from "../router/route-
 import { scanIslands, type IslandModule } from "../island/scan";
 import { generateClientEntry } from "../island/generate-entry";
 import { renderPage, renderErrorPage } from "../ssr/render";
-import { scanActions, relativeActions, type ActionRegistry } from "../action/scan";
+import { scanActions, actionNames } from "../action/scan";
 import type { RouteParams, GenerateStaticParams } from "../types";
 
 // =============================================================================
@@ -46,6 +46,11 @@ export interface BuildConfig {
    * Defaults to the published subpath `@deijose/nix-js-kit/island`.
    */
   hydrateImport?: string;
+  /**
+   * Import specifier the generated entry uses for `startClientRouter`.
+   * Defaults to the published subpath `@deijose/nix-js-kit/router`.
+   */
+  routerImport?: string;
 }
 
 export interface BuildResult {
@@ -98,22 +103,23 @@ function buildConcreteUrl(path: string, params: RouteParams): string {
 export async function build(config: BuildConfig): Promise<BuildResult> {
   const routes = await scanRoutes(config.appDir);
   const actions = await scanActions(config.appDir);
-  // Avoid exposing absolute server paths in the serialized HTML shell.
-  const publicActions = config.root ? relativeActions(actions, config.root) : actions;
+  // Only action names are serialized into the HTML shell; full paths stay on the server.
+  const publicActions = actionNames(actions);
   const result: BuildResult = { pages: 0, skipped: [], files: [], islands: [] };
 
   // Scan islands and generate the client entry before rendering pages, so the
   // hydration bundle stays in sync with what the app actually uses.
   if (config.islandsDir) {
     result.islands = await scanIslands(config.islandsDir);
+  }
 
-    if (config.generatedEntry) {
-      result.generatedEntry = await generateClientEntry({
-        islands: result.islands,
-        outFile: config.generatedEntry,
-        hydrateImport: config.hydrateImport,
-      });
-    }
+  if (config.generatedEntry) {
+    result.generatedEntry = await generateClientEntry({
+      islands: result.islands,
+      outFile: config.generatedEntry,
+      hydrateImport: config.hydrateImport,
+      routerImport: config.routerImport,
+    });
   }
 
   for (const route of routes.pages) {
@@ -171,7 +177,7 @@ export async function build(config: BuildConfig): Promise<BuildResult> {
 async function buildPage(
   config: BuildConfig,
   route: PageRoute,
-  actions: ActionRegistry,
+  actions: Record<string, string[]>,
 ): Promise<string> {
   return buildConcretePage(config, route, {}, actions);
 }
@@ -179,7 +185,7 @@ async function buildPage(
 async function buildDynamicPages(
   config: BuildConfig,
   route: PageRoute,
-  actions: ActionRegistry,
+  actions: Record<string, string[]>,
 ): Promise<string[]> {
   const { generateStaticParams } = (await import(
     route.pagePath
@@ -205,7 +211,7 @@ async function buildConcretePage(
   config: BuildConfig,
   route: PageRoute,
   params: RouteParams,
-  actions: ActionRegistry,
+  actions: Record<string, string[]>,
 ): Promise<string> {
   const { html: htmlOut } = await renderPage({
     route,

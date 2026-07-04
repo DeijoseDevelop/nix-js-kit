@@ -39,3 +39,4 @@ export { netlifyAdapter } from "./adapters/netlify";
 export { bunAdapter } from "./adapters/bun";
 export { nodeAdapter } from "./adapters/node";
 export { nixJsInterpolationPlugin, type InterpolationPluginOptions } from "./vite/interpolation-plugin";
+export { startClientRouter } from "./router/client";

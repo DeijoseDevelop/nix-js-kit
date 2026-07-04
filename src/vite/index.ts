@@ -2,7 +2,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, relative, resolve } from "node:path";
 import type { Plugin, Connect, ViteDevServer } from "vite";
 import { scanRoutes } from "../router/route-scanner";
-import { scanActions, type ActionRegistry } from "../action/scan";
+import { scanActions, actionNames, type ActionRegistry } from "../action/scan";
 import { handleActionRequest } from "../action/server";
 import { scanIslands } from "../island/scan";
 import { buildEntrySource } from "../island/generate-entry";
@@ -23,6 +23,8 @@ export interface NixJsKitViteOptions {
   lang?: string;
   /** Import specifier for hydrateIslands in the generated entry. */
   hydrateImport?: string;
+  /** Import specifier for startClientRouter in the generated entry. */
+  routerImport?: string;
 }
 
 /**
@@ -39,6 +41,7 @@ export function nixJsKit(options: NixJsKitViteOptions = {}): Plugin[] {
   const clientEntry = options.clientEntry ?? "/_nix-js/entry-client.js";
   const lang = options.lang ?? "es";
   const hydrateImport = options.hydrateImport ?? "@deijose/nix-js-kit/island";
+  const routerImport = options.routerImport ?? "@deijose/nix-js-kit/router";
 
   let routes: Awaited<ReturnType<typeof scanRoutes>> | null = null;
   let actions: ActionRegistry = {};
@@ -52,7 +55,7 @@ export function nixJsKit(options: NixJsKitViteOptions = {}): Plugin[] {
       root = config.root;
       const entryPath = resolve(root, generatedEntry);
       const islands = await scanIslands(resolve(root, islandsDir));
-      const source = buildEntrySource(islands, entryPath, hydrateImport);
+      const source = buildEntrySource(islands, entryPath, hydrateImport, routerImport);
       await mkdir(dirname(entryPath), { recursive: true });
       await writeFile(entryPath, source, "utf8");
 
@@ -67,7 +70,7 @@ export function nixJsKit(options: NixJsKitViteOptions = {}): Plugin[] {
 
       const appDirPath = resolve(root, appDir);
       const islandsDirPath = resolve(root, islandsDir);
-      setupHmr(server, appDirPath, islandsDirPath, root, generatedEntry, hydrateImport, () => {
+      setupHmr(server, appDirPath, islandsDirPath, root, generatedEntry, hydrateImport, routerImport, () => {
         routes = null;
         actions = {};
       });
@@ -172,6 +175,7 @@ function setupHmr(
   root: string,
   generatedEntry: string,
   hydrateImport: string,
+  routerImport: string,
   invalidate: () => void,
 ) {
   const isRelevant = (path: string) =>
@@ -180,7 +184,7 @@ function setupHmr(
   async function regenerateIslandEntry() {
     const islands = await scanIslands(islandsDirPath);
     const entryPath = resolve(root, generatedEntry);
-    const source = buildEntrySource(islands, entryPath, hydrateImport);
+    const source = buildEntrySource(islands, entryPath, hydrateImport, routerImport);
     await mkdir(dirname(entryPath), { recursive: true });
     await writeFile(entryPath, source, "utf8");
     const entryMod = server.moduleGraph.getModuleById(entryPath);
@@ -274,6 +278,7 @@ async function handleSsrRequest(
   options: SsrHandlerOptions,
 ): Promise<boolean> {
   if (!options.routes) return false;
+  const publicActions = actionNames(options.actions);
 
   let urlPath = req.url ?? "/";
   if (urlPath.includes("?")) urlPath = urlPath.split("?")[0];
@@ -296,7 +301,7 @@ async function handleSsrRequest(
         searchParams: match.searchParams,
         config,
         importer: options.ssrLoad,
-        actions: options.actions,
+        actions: publicActions,
       });
       res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
       res.end(html);
@@ -308,7 +313,7 @@ async function handleSsrRequest(
         status: 500,
         error: err,
         config,
-        actions: options.actions,
+        actions: publicActions,
         importer: options.ssrLoad,
       });
       if (errorResult) {
@@ -326,7 +331,7 @@ async function handleSsrRequest(
     routes: options.routes,
     status: 404,
     config,
-    actions: options.actions,
+    actions: publicActions,
     importer: options.ssrLoad,
   });
   if (errorResult) {

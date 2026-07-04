@@ -2,6 +2,13 @@
 
 All notable changes to `@deijose/nix-js-kit` will be documented in this file.
 
+## 1.2.2
+
+### Changed
+
+- Server action registry serialized in the HTML shell now exposes only action names per page (`{"/contact":["subscribe"]}`), never file paths or implementation details.
+- Client router is no longer inlined in every HTML page. It is bundled into the generated client entry (`/_nix-js/entry-client.js`) via `startClientRouter()` from `@deijose/nix-js-kit/router`, so routing code lives in the JS bundle like other frameworks.
+
 ## 1.2.1
 
 ### Fixed
