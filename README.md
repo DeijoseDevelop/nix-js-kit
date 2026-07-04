@@ -151,9 +151,10 @@ Options:
 ## What's new in v1.2
 
 - **Automatic attribute interpolation** — no more manual workarounds for `href="/blog/${slug}"`. The kit rewrites partial interpolations into valid Nix.js single interpolations during build, dev, start, and preview.
-- **Inline client router** — every page shell ships a lightweight router that intercepts internal links, fetches the rendered body from `/__nix-js/render`, and updates the DOM + history. Works in `preview` and `start`.
+- **Client router in the bundle** — the SPA router lives in the generated client entry (`/_nix-js/entry-client.js`) instead of being inlined into every page, keeping the HTML clean and the routing code cacheable.
 - **SSR fallback in preview** — `preview` now renders dynamic routes on demand when a static file is missing, so slugs work even without `generateStaticParams`.
 - **Auto client bundle build** — when `vite.client.config.ts` is present, `build` and `dev` build the hydration bundle automatically; no `--client-config` flag is required.
+- **No server paths in HTML** — the serialized action registry only exposes action names per page (`{"/contact":["subscribe"]}`), never file system paths or implementation details.
 
 ## Roadmap
 
