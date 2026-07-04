@@ -2,6 +2,15 @@
 
 All notable changes to `@deijose/nix-js-kit` will be documented in this file.
 
+## 0.11.3
+
+### Added
+
+- Initial test suite using Node's built-in test runner (`node:test`) and `tsx` for TypeScript imports.
+- Tests for `scanRoutes`, `scanActions`, `handleActionRequest` (JSON and form), and `renderPage`.
+- `test/fixtures/minimal` with sample pages, data loaders, actions, layout, and a dynamic route.
+- `npm test` and `npm run test:watch` scripts.
+
 ## 0.11.2
 
 ### Added
