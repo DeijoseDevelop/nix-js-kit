@@ -40,8 +40,9 @@ export const load: PageDataLoad = async () => {
 // src/app/page.ts
 import { html, signal } from "@deijose/nix-js";
 import type { PageProps } from "@deijose/nix-js-kit";
+import { load } from "./page.data.ts";
 
-export default function HomePage({ data }: PageProps<{ title: string }>) {
+export default function HomePage({ data }: PageProps<typeof load>) {
   const liked = signal(false);
 
   return html`
@@ -282,12 +283,13 @@ static HTML file to generate:
 // src/app/blog/[slug]/page.ts
 import { html } from "@deijose/nix-js";
 import type { PageProps, GenerateStaticParams } from "@deijose/nix-js-kit";
+import { load } from "./page.data.ts";
 
 export const generateStaticParams: GenerateStaticParams = async () => {
   return [{ slug: "hello-world" }, { slug: "nix-js-kit" }];
 };
 
-export default function BlogPostPage({ data, params }: PageProps) {
+export default function BlogPostPage({ data, params }: PageProps<typeof load>) {
   return html`
     <article>
       <h1>${data.title}</h1>

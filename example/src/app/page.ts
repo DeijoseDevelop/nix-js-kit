@@ -4,9 +4,9 @@ import type { PageProps } from "../../../src/index.ts";
 import LikeButton from "../islands/LikeButton.ts";
 import Counter from "../islands/Counter.ts";
 import ContactForm from "../islands/ContactForm.ts";
-import type { HomeData } from "./page.data.ts";
+import { load } from "./page.data.ts";
 
-export default function HomePage({ data }: PageProps<HomeData>) {
+export default function HomePage({ data }: PageProps<typeof load>) {
   return html`
     <article class="home">
       <h1>${data.title}</h1>

@@ -2,6 +2,14 @@
 
 All notable changes to `@deijose/nix-js-kit` will be documented in this file.
 
+## 0.11.2
+
+### Added
+
+- `PageProps<typeof load>` and `LayoutProps<typeof load>` now automatically infer the loader's return type (with `Awaited` for async functions).
+- README quick example and dynamic route example use `PageProps<typeof load>`.
+- Example home page uses `PageProps<typeof load>` instead of a manually exported interface.
+
 ## 0.11.1
 
 ### Added
