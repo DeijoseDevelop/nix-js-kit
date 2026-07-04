@@ -83,6 +83,7 @@ describe("integration: build + SSR", () => {
     const server = await createSsrServer({
       appDir,
       cacheDir,
+      streaming: false,
       port: 0,
     });
     await server.listen();
@@ -98,6 +99,31 @@ describe("integration: build + SSR", () => {
       assert.ok(cached, "page should be cached");
       assert.ok(cached.html.includes("<h1>Hello from test</h1>"), "cached HTML should match");
       assert.equal(cached.revalidate, 60, "revalidate should be 60 seconds");
+    } finally {
+      await server.close();
+    }
+  });
+
+  it("streams loading boundary and renders real content via endpoint", async () => {
+    const server = await createSsrServer({
+      appDir,
+      streaming: true,
+      port: 0,
+    });
+    await server.listen();
+    const { port } = server.server.address() as { port: number };
+
+    try {
+      const page = await fetch(`http://127.0.0.1:${port}/`);
+      assert.equal(page.status, 200);
+      const body = await page.text();
+      assert.ok(body.includes("<p>Loading...</p>"), "shell should render loading boundary");
+      assert.ok(body.includes("__nixJsStreamRender"), "shell should include streaming script");
+
+      const render = await fetch(`http://127.0.0.1:${port}/__nix-js/render?page=%2F&search=`);
+      assert.equal(render.status, 200);
+      const renderedBody = await render.text();
+      assert.ok(renderedBody.includes("<h1>Hello from test</h1>"), "render endpoint should return real content");
     } finally {
       await server.close();
     }

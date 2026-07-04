@@ -2,6 +2,14 @@
 
 All notable changes to `@deijose/nix-js-kit` will be documented in this file.
 
+## 1.1.1
+
+### Added
+
+- Streaming `loading.ts` boundaries: shell renders loading UI and client fetches real content from `/__nix-js/render`.
+- `renderStreamingPage` and `renderPageBody` helpers exported.
+- `streaming` option for `createSsrServer` (defaults to true when a page has `loading.ts`).
+
 ## 1.1.0
 
 ### Added

@@ -25,6 +25,7 @@ export {
 } from "./island/generate-entry";
 export { matchRoute, matchApiRoute, type MatchResult, type ApiMatchResult } from "./ssr/match";
 export { renderPage, renderErrorPage, type RenderPageOptions, type RenderPageResult, type RenderErrorPageOptions } from "./ssr/render";
+export { renderStreamingPage, renderPageBody, type StreamingPageOptions, type RenderPageBodyOptions } from "./ssr/stream";
 export { getCachedHtml, setCachedHtml, clearCache, type CacheEntry } from "./cache";
 export { createSsrServer, type SsrServer, type SsrServerOptions } from "./ssr/server";
 export { run, type CliOptions } from "./cli";

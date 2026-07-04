@@ -7,6 +7,7 @@ import { handleActionRequest } from "../action/server";
 import { getCachedHtml, setCachedHtml } from "../cache";
 import { matchApiRoute, matchRoute } from "./match";
 import { renderPage, renderErrorPage } from "./render";
+import { renderPageBody, renderStreamingPage } from "./stream";
 
 export interface SsrServerOptions {
   /** Absolute path to the app directory (e.g. /project/src/app). */
@@ -23,6 +24,8 @@ export interface SsrServerOptions {
   cacheDir?: string;
   /** Default revalidate interval in seconds when a page does not export one. */
   defaultRevalidate?: number;
+  /** If true, render pages with loading.ts boundaries using streaming. */
+  streaming?: boolean;
 }
 
 export interface SsrServer {
@@ -81,6 +84,28 @@ export async function createSsrServer(options: SsrServerOptions): Promise<SsrSer
       return;
     }
 
+    if (urlPath === "/__nix-js/render") {
+      const renderUrl = new URL(req.url ?? "/", "http://localhost");
+      const page = renderUrl.searchParams.get("page") ?? "/";
+      const search = renderUrl.searchParams.get("search") ?? "";
+      try {
+        const html = await renderPageBody({
+          routes,
+          pathname: page,
+          searchParams: new URLSearchParams(search),
+          config: { lang: options.lang ?? "es", clientEntry: options.clientEntry },
+          actions,
+        });
+        res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+        res.end(html);
+      } catch (err) {
+        console.error("[ssr] streaming render error", err);
+        res.writeHead(500, { "Content-Type": "text/plain" });
+        res.end("Internal Server Error");
+      }
+      return;
+    }
+
     // Try API routes first.
     const apiMatch = matchApiRoute(urlPath, routes.api);
     if (apiMatch) {
@@ -134,7 +159,16 @@ export async function createSsrServer(options: SsrServerOptions): Promise<SsrSer
           ? ((await import(match.route.dataPath)) as { revalidate?: number }).revalidate
           : undefined;
         const ttl = revalidate ?? options.defaultRevalidate;
-        if (options.cacheDir && typeof ttl === "number") {
+        const useStreaming = options.streaming !== false && match.route.loadingPath;
+        if (useStreaming) {
+          html = await renderStreamingPage({
+            route: match.route,
+            params: match.params,
+            searchParams: match.searchParams,
+            config,
+            actions,
+          });
+        } else if (options.cacheDir && typeof ttl === "number") {
           const cached = await getCachedHtml(options.cacheDir, urlPath);
           if (cached) {
             html = cached.html;
