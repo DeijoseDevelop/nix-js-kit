@@ -2,6 +2,13 @@
 
 All notable changes to `@deijose/nix-js-kit` will be documented in this file.
 
+## 1.0.0
+
+### Added
+
+- Official v1.0 release. The framework is now stable with full test coverage.
+- All v1.0 roadmap items completed: unit and integration tests, HMR, automatic `PageProps<typeof load>` typing, `nixAction`, scoped actions, progressive enhancement, `fail()`/`redirect()`, `route.ts` API endpoints, and `loading.ts` boundary scanning.
+
 ## 0.11.7
 
 ### Added
