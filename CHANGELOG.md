@@ -2,6 +2,15 @@
 
 All notable changes to `@deijose/nix-js-kit` will be documented in this file.
 
+## 0.11.4
+
+### Added
+
+- Integration tests for static build + SSR server.
+- Node adapter integration test: builds `.nix-js/node-server.mjs` and verifies it serves SSR pages.
+- Unit tests for `nixAction` helper (pending, data, and error signals).
+- Cleanup hooks for integration tests to remove temporary `dist/` and `.nix-js/` folders.
+
 ## 0.11.3
 
 ### Added
