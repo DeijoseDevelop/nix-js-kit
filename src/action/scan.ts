@@ -1,4 +1,4 @@
-import { resolve } from "node:path";
+import { resolve, relative } from "node:path";
 import { scanRoutes } from "../router/route-scanner";
 
 /**
@@ -38,4 +38,21 @@ export async function scanActions(appDir: string): Promise<ActionRegistry> {
   }
 
   return actions;
+}
+
+/**
+ * Return a copy of the action registry where every file path is made relative to
+ * the given project root. Useful for serializing actions into the HTML shell
+ * without exposing absolute server paths.
+ */
+export function relativeActions(actions: ActionRegistry, root: string): ActionRegistry {
+  const result: ActionRegistry = {};
+  for (const [page, pageActions] of Object.entries(actions)) {
+    const entries: Record<string, string> = {};
+    for (const [name, actionPath] of Object.entries(pageActions)) {
+      entries[name] = relative(root, actionPath);
+    }
+    result[page] = entries;
+  }
+  return result;
 }

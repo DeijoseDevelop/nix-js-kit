@@ -6,7 +6,7 @@ import { spawnSync } from "node:child_process";
 import { build, type BuildConfig } from "./build/build";
 import { transformProjectFiles } from "./build/transform-source";
 import { createSsrServer } from "./ssr/server";
-import { scanActions } from "./action/scan";
+import { scanActions, relativeActions } from "./action/scan";
 import { scanRoutes } from "./router/route-scanner";
 import { matchRoute, matchApiRoute } from "./ssr/match";
 import { handleActionRequest } from "./action/server";
@@ -196,6 +196,7 @@ Options:
 
 function toBuildConfig(options: CliOptions): BuildConfig {
   return {
+    root: options.root,
     appDir: options.appDir,
     outDir: options.outDir,
     clientEntry: options.clientEntry,
@@ -316,6 +317,7 @@ async function doStart(options: CliOptions): Promise<void> {
   });
 
   const ssr = await createSsrServer({
+    root: options.root,
     appDir: transformedDir,
     publicDir: options.outDir,
     clientEntry: options.clientEntry,
@@ -360,6 +362,7 @@ async function handleRequest(
   actions: import("./action/scan").ActionRegistry,
   routes: import("./router/route-scanner").ScannedRoutes,
 ): Promise<void> {
+  const publicActions = options.root ? relativeActions(actions, options.root) : actions;
   let urlPath = req.url ?? "/";
   if (urlPath.includes("?")) urlPath = urlPath.split("?")[0];
 
@@ -400,7 +403,7 @@ async function handleRequest(
         pathname: page,
         searchParams: new URLSearchParams(search),
         config: { lang: options.lang, clientEntry: options.clientEntry },
-        actions,
+        actions: publicActions,
       });
       res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
       res.end(html);
@@ -481,7 +484,7 @@ async function handleRequest(
       params: match.params,
       searchParams: new URLSearchParams(req.url?.split("?")[1] ?? ""),
       config: { lang: options.lang, clientEntry: options.clientEntry },
-      actions,
+      actions: publicActions,
     });
     res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
     res.end(result.html);

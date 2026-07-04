@@ -4,7 +4,7 @@ import { scanRoutes, type PageRoute, type ScannedRoutes } from "../router/route-
 import { scanIslands, type IslandModule } from "../island/scan";
 import { generateClientEntry } from "../island/generate-entry";
 import { renderPage, renderErrorPage } from "../ssr/render";
-import { scanActions, type ActionRegistry } from "../action/scan";
+import { scanActions, relativeActions, type ActionRegistry } from "../action/scan";
 import type { RouteParams, GenerateStaticParams } from "../types";
 
 // =============================================================================
@@ -23,6 +23,9 @@ export interface BuildConfig {
   appDir: string;
   /** Absolute path to the output directory (e.g. /project/dist). */
   outDir: string;
+  /** Absolute path to the project root (e.g. /project). When provided, action
+   * paths in the serialized HTML shell are made relative to this root. */
+  root?: string;
   /** Base path for the client entry module, e.g. "/_nix-js/entry-client.js". */
   clientEntry?: string;
   /** Default language for the HTML shell. */
@@ -95,6 +98,8 @@ function buildConcreteUrl(path: string, params: RouteParams): string {
 export async function build(config: BuildConfig): Promise<BuildResult> {
   const routes = await scanRoutes(config.appDir);
   const actions = await scanActions(config.appDir);
+  // Avoid exposing absolute server paths in the serialized HTML shell.
+  const publicActions = config.root ? relativeActions(actions, config.root) : actions;
   const result: BuildResult = { pages: 0, skipped: [], files: [], islands: [] };
 
   // Scan islands and generate the client entry before rendering pages, so the
@@ -113,13 +118,13 @@ export async function build(config: BuildConfig): Promise<BuildResult> {
 
   for (const route of routes.pages) {
     if (!isDynamic(route.path)) {
-      const filePath = await buildPage(config, route, actions);
+      const filePath = await buildPage(config, route, publicActions);
       result.pages++;
       result.files.push(filePath);
       continue;
     }
 
-    const dynamicFiles = await buildDynamicPages(config, route, actions);
+    const dynamicFiles = await buildDynamicPages(config, route, publicActions);
     if (dynamicFiles.length === 0) {
       result.skipped.push(route.path);
     } else {
@@ -135,7 +140,7 @@ export async function build(config: BuildConfig): Promise<BuildResult> {
       routes,
       status: 404,
       config: errorConfig,
-      actions,
+      actions: publicActions,
     });
     if (result404) {
       const filePath = join(config.outDir, "404.html");
@@ -150,7 +155,7 @@ export async function build(config: BuildConfig): Promise<BuildResult> {
       routes,
       status: 500,
       config: errorConfig,
-      actions,
+      actions: publicActions,
     });
     if (result500) {
       const filePath = join(config.outDir, "500.html");

@@ -2,6 +2,12 @@
 
 All notable changes to `@deijose/nix-js-kit` will be documented in this file.
 
+## 1.2.1
+
+### Fixed
+
+- Server action file paths serialized in the HTML shell (`<script id="nix-js-actions">`) are now relative to the project root instead of absolute server paths. This prevents leaking the host file system layout (e.g. `/home/user/...`) in production HTML.
+
 ## 1.2.0
 
 ### Added

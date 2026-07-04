@@ -2,7 +2,7 @@ import { createServer, type IncomingMessage, type Server } from "node:http";
 import { readFile, stat } from "node:fs/promises";
 import { extname, join } from "node:path";
 import { scanRoutes } from "../router/route-scanner";
-import { scanActions } from "../action/scan";
+import { scanActions, relativeActions } from "../action/scan";
 import { handleActionRequest } from "../action/server";
 import { getCachedHtml, setCachedHtml } from "../cache";
 import { matchApiRoute, matchRoute } from "./match";
@@ -12,6 +12,9 @@ import { renderPageBody, renderStreamingPage } from "./stream";
 export interface SsrServerOptions {
   /** Absolute path to the app directory (e.g. /project/src/app). */
   appDir: string;
+  /** Absolute path to the project root. When provided, action paths in the
+   * serialized HTML shell are made relative to this root. */
+  root?: string;
   /** Absolute path to the public directory for static files (optional). */
   publicDir?: string;
   /** Base path for the client entry module, e.g. "/_nix-js/entry-client.js". */
@@ -40,6 +43,7 @@ export interface SsrServer {
 export async function createSsrServer(options: SsrServerOptions): Promise<SsrServer> {
   const routes = await scanRoutes(options.appDir);
   const actions = await scanActions(options.appDir);
+  const publicActions = options.root ? relativeActions(actions, options.root) : actions;
 
   const resolveAction = async (name: string, page?: string) => {
     const pageActions = page ? actions[page] : Object.values(actions).find((p) => p[name]) ?? undefined;
@@ -94,7 +98,7 @@ export async function createSsrServer(options: SsrServerOptions): Promise<SsrSer
           pathname: page,
           searchParams: new URLSearchParams(search),
           config: { lang: options.lang ?? "es", clientEntry: options.clientEntry },
-          actions,
+          actions: publicActions,
         });
         res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
         res.end(html);
@@ -166,7 +170,7 @@ export async function createSsrServer(options: SsrServerOptions): Promise<SsrSer
             params: match.params,
             searchParams: match.searchParams,
             config,
-            actions,
+            actions: publicActions,
           });
         } else if (options.cacheDir && typeof ttl === "number") {
           const cached = await getCachedHtml(options.cacheDir, urlPath);
@@ -178,7 +182,7 @@ export async function createSsrServer(options: SsrServerOptions): Promise<SsrSer
               params: match.params,
               searchParams: match.searchParams,
               config,
-              actions,
+              actions: publicActions,
             });
             html = result.html;
             await setCachedHtml(options.cacheDir, urlPath, html, ttl);
@@ -189,7 +193,7 @@ export async function createSsrServer(options: SsrServerOptions): Promise<SsrSer
             params: match.params,
             searchParams: match.searchParams,
             config,
-            actions,
+            actions: publicActions,
           })).html;
         }
         res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
@@ -202,7 +206,7 @@ export async function createSsrServer(options: SsrServerOptions): Promise<SsrSer
           status: 500,
           error: err,
           config,
-          actions,
+          actions: publicActions,
         });
         if (errorResult) {
           res.writeHead(errorResult.status, { "Content-Type": "text/html; charset=utf-8" });
@@ -219,7 +223,7 @@ export async function createSsrServer(options: SsrServerOptions): Promise<SsrSer
       routes,
       status: 404,
       config,
-      actions,
+      actions: publicActions,
     });
     if (errorResult) {
       res.writeHead(errorResult.status, { "Content-Type": "text/html; charset=utf-8" });
