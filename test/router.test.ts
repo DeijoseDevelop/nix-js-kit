@@ -25,4 +25,17 @@ describe("scanRoutes", () => {
     assert.equal(blog?.pagePath, resolve(fixtures, "minimal/src/app/blog/[slug]/page.ts"));
     assert.equal(blog?.dataPath, resolve(fixtures, "minimal/src/app/blog/[slug]/page.data.ts"));
   });
+
+  it("discovers API routes", async () => {
+    const routes = await scanRoutes(resolve(fixtures, "minimal/src/app"));
+    const api = routes.api.find((r) => r.path === "/api/posts");
+    assert.ok(api, "API route should be found");
+    assert.equal(api?.routePath, resolve(fixtures, "minimal/src/app/api/posts/route.ts"));
+  });
+
+  it("discovers loading boundaries", async () => {
+    const routes = await scanRoutes(resolve(fixtures, "minimal/src/app"));
+    const home = routes.pages.find((p) => p.path === "/");
+    assert.equal(home?.loadingPath, resolve(fixtures, "minimal/src/app/loading.ts"));
+  });
 });

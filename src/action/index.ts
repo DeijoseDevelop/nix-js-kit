@@ -21,6 +21,27 @@
  */
 
 import { signal } from "@deijose/nix-js";
+import { ActionFailure, RedirectResponse } from "../errors";
+
+interface ActionFailurePayload {
+  __nix_action_failure?: boolean;
+  status?: number;
+  data?: unknown;
+}
+
+interface RedirectPayload {
+  __nix_action_redirect?: boolean;
+  status?: number;
+  location?: string;
+}
+
+function isActionFailurePayload(value: unknown): value is ActionFailurePayload & { __nix_action_failure: true } {
+  return typeof value === "object" && value !== null && (value as Record<string, unknown>).__nix_action_failure === true;
+}
+
+function isRedirectPayload(value: unknown): value is RedirectPayload & { __nix_action_redirect: true } {
+  return typeof value === "object" && value !== null && (value as Record<string, unknown>).__nix_action_redirect === true;
+}
 
 export interface ActionRequest {
   name: string;
@@ -45,7 +66,7 @@ export async function callAction<T = unknown>(
   name: string,
   args: unknown = [],
   options: CallActionOptions = {},
-): Promise<T> {
+): Promise<T | ActionFailure<T> | RedirectResponse> {
   const argsArray = Array.isArray(args) ? args : [args];
   const res = await fetch("/__nix-js/actions", {
     method: "POST",
@@ -56,21 +77,35 @@ export async function callAction<T = unknown>(
     body: JSON.stringify({ name, page: options.page, args: argsArray } as ActionRequest),
   });
 
+  const text = await res.text();
   if (!res.ok) {
-    const text = await res.text();
+    let payload: unknown;
+    try {
+      payload = JSON.parse(text);
+    } catch {
+      // not JSON, treat as plain error
+    }
+    if (isActionFailurePayload(payload) && payload.status !== undefined) {
+      return new ActionFailure(payload.status, payload.data as T);
+    }
     throw new Error(`Action "${name}" failed: ${text}`);
   }
 
-  return res.json() as Promise<T>;
+  const payload: unknown = JSON.parse(text);
+  if (isRedirectPayload(payload) && payload.status !== undefined && payload.location !== undefined) {
+    return new RedirectResponse(payload.status, payload.location);
+  }
+
+  return payload as T;
 }
 
 export interface NixAction<TInput = unknown, TOutput = unknown> {
   /** Submit the action with the given input. */
-  submit(input: TInput): Promise<TOutput>;
+  submit(input: TInput): Promise<TOutput | ActionFailure<TOutput> | RedirectResponse>;
   /** Signal that is true while the action is running. */
   pending: { value: boolean };
-  /** Signal with the last successful result, or null. */
-  data: { value: TOutput | null };
+  /** Signal with the last successful result, action failure, redirect, or null. */
+  data: { value: TOutput | ActionFailure<TOutput> | RedirectResponse | null };
   /** Signal with the last error, or null. */
   error: { value: Error | null };
 }
@@ -87,9 +122,9 @@ export function nixAction<TInput = unknown, TOutput = unknown>(
 ): NixAction<TInput, TOutput> {
   const pending = signal(false);
   const error = signal<Error | null>(null);
-  const data = signal<TOutput | null>(null);
+  const data = signal<TOutput | ActionFailure<TOutput> | RedirectResponse | null>(null);
 
-  async function submit(input: TInput): Promise<TOutput> {
+  async function submit(input: TInput): Promise<TOutput | ActionFailure<TOutput> | RedirectResponse> {
     pending.value = true;
     error.value = null;
     try {

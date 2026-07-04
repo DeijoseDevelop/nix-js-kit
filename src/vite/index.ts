@@ -6,7 +6,7 @@ import { scanActions, type ActionRegistry } from "../action/scan";
 import { handleActionRequest } from "../action/server";
 import { scanIslands } from "../island/scan";
 import { buildEntrySource } from "../island/generate-entry";
-import { matchRoute } from "../ssr/match";
+import { matchApiRoute, matchRoute } from "../ssr/match";
 import { renderPage, renderErrorPage } from "../ssr/render";
 
 export interface NixJsKitViteOptions {
@@ -112,9 +112,46 @@ export function nixJsKit(options: NixJsKitViteOptions = {}): Plugin {
           }
         }
 
+        const currentRoutes = routes ?? (routes = await scanRoutes(appDirPath));
+        const currentActions = Object.keys(actions).length ? actions : (actions = await scanActions(appDirPath));
+
+        if (!urlPath.startsWith("/@") && !urlPath.startsWith("/node_modules/") && !urlPath.includes(".")) {
+          const apiMatch = matchApiRoute(urlPath, currentRoutes.api);
+          if (apiMatch) {
+            try {
+              const mod = (await ssrLoad(apiMatch.route.routePath)) as Record<string, (request: Request) => unknown>;
+              const handler = mod[req.method ?? "GET"];
+              if (typeof handler !== "function") {
+                res.writeHead(405, { "Content-Type": "text/plain" });
+                res.end(`Method not allowed: ${req.method}`);
+                return;
+              }
+              const body = req.method && req.method !== "GET" && req.method !== "HEAD" ? await readRequestBody(req) : undefined;
+              const headers = new Headers();
+              const contentType = req.headers["content-type"];
+              const accept = req.headers["accept"];
+              if (contentType) headers.set("Content-Type", contentType);
+              if (accept) headers.set("Accept", accept);
+              const request = new Request(`http://${req.headers.host ?? "localhost"}${req.url}`, {
+                method: req.method,
+                headers,
+                body,
+              });
+              const response = (await handler(request)) as Response;
+              res.writeHead(response.status, Object.fromEntries(response.headers.entries()));
+              res.end(Buffer.from(await response.arrayBuffer()));
+            } catch (err) {
+              console.error("[nix-js-kit] API route error:", err);
+              res.writeHead(500, { "Content-Type": "text/plain; charset=utf-8" });
+              res.end(String(err));
+            }
+            return;
+          }
+        }
+
         const handled = await handleSsrRequest(req, res, next, {
-          routes: routes ?? (routes = await scanRoutes(appDirPath)),
-          actions: Object.keys(actions).length ? actions : (actions = await scanActions(appDirPath)),
+          routes: currentRoutes,
+          actions: currentActions,
           clientEntry,
           lang,
           ssrLoad,

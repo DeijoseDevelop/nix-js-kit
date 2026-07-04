@@ -1,4 +1,5 @@
 import type { ActionRequest } from "./index";
+import { ActionFailure, RedirectResponse } from "../errors";
 
 /**
  * Resolves a server action by name and optional page scope.
@@ -128,6 +129,39 @@ export async function handleActionRequest(
     }
 
     const result = await action(...args);
+
+    if (result instanceof ActionFailure) {
+      if (wantsJson) {
+        return new Response(JSON.stringify({ __nix_action_failure: true, status: result.status, data: result.data }), {
+          status: result.status,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      // For progressive enhancement, redirect back with the failure data serialized in the URL.
+      const referer = request.headers.get("Referer") ?? "/";
+      const url = new URL(referer, "http://localhost");
+      url.searchParams.set("__nix_action_error", JSON.stringify(result.data));
+      return new Response(null, {
+        status: 303,
+        headers: { Location: url.pathname + url.search, "Content-Type": "text/plain" },
+      });
+    }
+
+    if (result instanceof RedirectResponse) {
+      if (wantsJson) {
+        return new Response(
+          JSON.stringify({ __nix_action_redirect: true, status: result.status, location: result.location }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        );
+      }
+      return new Response(null, {
+        status: result.status,
+        headers: { Location: result.location, "Content-Type": "text/plain" },
+      });
+    }
 
     if (wantsJson) {
       return new Response(JSON.stringify(result ?? null), {

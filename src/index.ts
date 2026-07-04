@@ -23,13 +23,14 @@ export {
   buildEntrySource,
   type GenerateEntryOptions,
 } from "./island/generate-entry";
-export { matchRoute, type MatchResult } from "./ssr/match";
+export { matchRoute, matchApiRoute, type MatchResult, type ApiMatchResult } from "./ssr/match";
 export { renderPage, renderErrorPage, type RenderPageOptions, type RenderErrorPageOptions } from "./ssr/render";
 export { createSsrServer, type SsrServer, type SsrServerOptions } from "./ssr/server";
 export { run, type CliOptions } from "./cli";
 export { callAction, type ActionRequest } from "./action/index";
 export { handleActionRequest, type ActionResolver } from "./action/server";
 export { scanActions } from "./action/scan";
+export { fail, redirect, ActionFailure, RedirectResponse } from "./errors";
 export type { Adapter, AdapterOptions } from "./adapters/index";
 export { vercelAdapter } from "./adapters/vercel";
 export { netlifyAdapter } from "./adapters/netlify";

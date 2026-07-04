@@ -157,4 +157,36 @@ describe("adapters", () => {
     const body = await response.text();
     assert.ok(body.includes("<h1>Hello from test</h1>"), "Netlify handler should SSR home page");
   });
+
+  it("handles API routes through adapters", async () => {
+    await buildFixture();
+    await nodeAdapter.build({
+      root,
+      appDir: "src/app",
+      outDir: "dist",
+      islandsDir: "src/islands",
+      clientEntry: "/_nix-js/entry-client.js",
+      lang: "es",
+      hydrateImport: "../../../src/island/index.ts",
+    });
+
+    const serverPath = resolve(generatedDir, "node-server.mjs");
+    const child = spawn("node", [serverPath], { cwd: root, env: { ...process.env, PORT: "3464" } });
+    try {
+      await waitForServer("http://127.0.0.1:3464/");
+      const get = await fetch("http://127.0.0.1:3464/api/posts");
+      assert.equal(get.status, 200);
+      assert.deepEqual(await get.json(), [{ id: 1, title: "Hello" }]);
+
+      const post = await fetch("http://127.0.0.1:3464/api/posts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title: "New" }),
+      });
+      assert.equal(post.status, 201);
+      assert.deepEqual(await post.json(), { id: 2, title: "New" });
+    } finally {
+      child.kill();
+    }
+  });
 });

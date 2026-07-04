@@ -2,7 +2,6 @@ import { describe, it, after } from "node:test";
 import assert from "node:assert/strict";
 import { build } from "../src/build/build.ts";
 import { createSsrServer } from "../src/ssr/server.ts";
-import { scanActions } from "../src/action/scan.ts";
 import { mkdir, rm, readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
@@ -39,12 +38,9 @@ describe("integration: build + SSR", () => {
   });
 
   it("serves SSR requests and actions", async () => {
-    const actions = await scanActions(appDir);
     const server = await createSsrServer({
       appDir,
-      islandsDir,
-      generatedEntry: resolve(root, ".nix-js/entry-client.ts"),
-      hydrateImport: "../../../src/island/index.ts",
+      publicDir: outDir,
       port: 0,
     });
     await server.listen();
@@ -63,6 +59,18 @@ describe("integration: build + SSR", () => {
       });
       assert.equal(action.status, 200);
       assert.equal(await action.json(), "Hello, Ada!");
+
+      const api = await fetch(`http://127.0.0.1:${port}/api/posts`);
+      assert.equal(api.status, 200);
+      assert.deepEqual(await api.json(), [{ id: 1, title: "Hello" }]);
+
+      const apiPost = await fetch(`http://127.0.0.1:${port}/api/posts`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title: "New" }),
+      });
+      assert.equal(apiPost.status, 201);
+      assert.deepEqual(await apiPost.json(), { id: 2, title: "New" });
     } finally {
       await server.close();
     }

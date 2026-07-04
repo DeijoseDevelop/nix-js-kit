@@ -2,6 +2,16 @@
 
 All notable changes to `@deijose/nix-js-kit` will be documented in this file.
 
+## 0.11.7
+
+### Added
+
+- `fail()` and `redirect()` helpers for server actions with client-side detection in `callAction`/`nixAction`.
+- `route.ts` API endpoints supported in SSR server, Vite dev server, CLI preview/dev, and all adapters.
+- `loading.ts` boundary scanned and included in the SSR module registry.
+- `matchApiRoute` helper exported for dispatching API routes.
+- Tests for `fail()`/`redirect()`, API routes, and loading boundaries.
+
 ## 0.11.6
 
 ### Added

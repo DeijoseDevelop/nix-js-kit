@@ -1,4 +1,4 @@
-import type { PageRoute } from "../router/route-scanner";
+import type { ApiRoute, PageRoute } from "../router/route-scanner";
 
 export interface MatchResult {
   route: PageRoute;
@@ -26,6 +26,31 @@ export function matchRoute(
     const match = tryMatch(requestSegments, routeSegments);
     if (match) {
       return { route, params: match, searchParams: new URLSearchParams() };
+    }
+  }
+
+  return undefined;
+}
+
+export interface ApiMatchResult<T = ApiRoute> {
+  route: T;
+  params: Record<string, string | string[]>;
+}
+
+/**
+ * Match a request pathname against a list of API routes.
+ */
+export function matchApiRoute<T extends { path: string }>(pathname: string, routes: T[]): ApiMatchResult<T> | undefined {
+  const cleanPath = pathname.split("?")[0];
+  const requestSegments = cleanPath.split("/").filter(Boolean);
+
+  const sorted = [...routes].sort((a, b) => specificity(b.path) - specificity(a.path));
+
+  for (const route of sorted) {
+    const routeSegments = route.path.split("/").filter(Boolean);
+    const match = tryMatch(requestSegments, routeSegments);
+    if (match) {
+      return { route, params: match };
     }
   }
 

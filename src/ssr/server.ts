@@ -4,7 +4,7 @@ import { extname, join } from "node:path";
 import { scanRoutes } from "../router/route-scanner";
 import { scanActions } from "../action/scan";
 import { handleActionRequest } from "../action/server";
-import { matchRoute } from "./match";
+import { matchApiRoute, matchRoute } from "./match";
 import { renderPage, renderErrorPage } from "./render";
 
 export interface SsrServerOptions {
@@ -70,6 +70,39 @@ export async function createSsrServer(options: SsrServerOptions): Promise<SsrSer
         res.end(await response.text());
       } catch (err) {
         console.error("[action] error handling", err);
+        res.writeHead(500, { "Content-Type": "text/plain; charset=utf-8" });
+        res.end(String(err));
+      }
+      return;
+    }
+
+    // Try API routes first.
+    const apiMatch = matchApiRoute(urlPath, routes.api);
+    if (apiMatch) {
+      try {
+        const mod = (await import(apiMatch.route.routePath)) as Record<string, (request: Request) => unknown>;
+        const handler = mod[req.method ?? "GET"];
+        if (typeof handler !== "function") {
+          res.writeHead(405, { "Content-Type": "text/plain" });
+          res.end(`Method not allowed: ${req.method}`);
+          return;
+        }
+        const body = req.method && req.method !== "GET" && req.method !== "HEAD" ? await readRequestBody(req) : undefined;
+        const headers = new Headers();
+        const contentType = req.headers["content-type"];
+        const accept = req.headers["accept"];
+        if (contentType) headers.set("Content-Type", contentType);
+        if (accept) headers.set("Accept", accept);
+        const request = new Request(`http://${req.headers.host ?? "localhost"}${req.url}`, {
+          method: req.method,
+          headers,
+          body,
+        });
+        const response = (await handler(request)) as Response;
+        res.writeHead(response.status, Object.fromEntries(response.headers.entries()));
+        res.end(Buffer.from(await response.arrayBuffer()));
+      } catch (err) {
+        console.error("[api] error handling", urlPath, err);
         res.writeHead(500, { "Content-Type": "text/plain; charset=utf-8" });
         res.end(String(err));
       }

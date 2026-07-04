@@ -6,6 +6,8 @@ import { spawnSync } from "node:child_process";
 import { build, type BuildConfig } from "./build/build";
 import { createSsrServer } from "./ssr/server";
 import { scanActions } from "./action/scan";
+import { scanRoutes } from "./router/route-scanner";
+import { matchApiRoute } from "./ssr/match";
 import { handleActionRequest } from "./action/server";
 
 // =============================================================================
@@ -216,7 +218,8 @@ async function doDev(options: CliOptions): Promise<void> {
   }
 
   const actions = await scanActions(options.appDir);
-  const server = createServer((req, res) => handleRequest(req, res, options, actions));
+  const routes = await scanRoutes(options.appDir);
+  const server = createServer((req, res) => handleRequest(req, res, options, actions, routes));
   server.listen(options.port, options.host, () => {
     console.log(`\n  → Dev server http://${options.host}:${options.port}`);
   });
@@ -241,7 +244,8 @@ export async function doPreview(options: CliOptions): Promise<import("node:http"
   }
 
   const actions = await scanActions(options.appDir);
-  const server = createServer((req, res) => handleRequest(req, res, options, actions));
+  const routes = await scanRoutes(options.appDir);
+  const server = createServer((req, res) => handleRequest(req, res, options, actions, routes));
   server.listen(options.port, options.host, () => {
     console.log(`\n  → Preview server http://${options.host}:${options.port}`);
   });
@@ -277,6 +281,7 @@ async function handleRequest(
   res: import("node:http").ServerResponse,
   options: CliOptions,
   actions: import("./action/scan").ActionRegistry,
+  routes: import("./router/route-scanner").ScannedRoutes,
 ): Promise<void> {
   let urlPath = req.url ?? "/";
   if (urlPath.includes("?")) urlPath = urlPath.split("?")[0];
@@ -300,6 +305,39 @@ async function handleRequest(
       res.end(await response.text());
     } catch (err) {
       console.error("[nix-js-kit] action error:", err);
+      res.writeHead(500, { "Content-Type": "text/plain; charset=utf-8" });
+      res.end(String(err));
+    }
+    return;
+  }
+
+  // API routes.
+  const apiMatch = matchApiRoute(urlPath, routes.api);
+  if (apiMatch) {
+    try {
+      const mod = (await import(apiMatch.route.routePath)) as Record<string, (request: Request) => unknown>;
+      const handler = mod[req.method ?? "GET"];
+      if (typeof handler !== "function") {
+        res.writeHead(405, { "Content-Type": "text/plain" });
+        res.end(`Method not allowed: ${req.method}`);
+        return;
+      }
+      const body = req.method && req.method !== "GET" && req.method !== "HEAD" ? await readRequestBody(req) : undefined;
+      const headers = new Headers();
+      const contentType = req.headers["content-type"];
+      const accept = req.headers["accept"];
+      if (contentType) headers.set("Content-Type", contentType);
+      if (accept) headers.set("Accept", accept);
+      const request = new Request(`http://${req.headers.host ?? "localhost"}${req.url}`, {
+        method: req.method,
+        headers,
+        body,
+      });
+      const response = (await handler(request)) as Response;
+      res.writeHead(response.status, Object.fromEntries(response.headers.entries()));
+      res.end(Buffer.from(await response.arrayBuffer()));
+    } catch (err) {
+      console.error("[nix-js-kit] API route error:", err);
       res.writeHead(500, { "Content-Type": "text/plain; charset=utf-8" });
       res.end(String(err));
     }

@@ -30,6 +30,8 @@ export interface PageRoute {
   actionPath?: string;
   /** Ordered list of layout.ts modules from root to leaf. */
   layouts: string[];
+  /** File system path to the loading.ts module, if any. */
+  loadingPath?: string;
   /** Dynamic parameter names extracted from the path. */
   params: string[];
 }
@@ -118,6 +120,9 @@ async function scanRecursive(
   const actionPath = files.includes("page.action.ts")
     ? join(currentDir, "page.action.ts")
     : undefined;
+  const loadingPath = files.includes("loading.ts")
+    ? join(currentDir, "loading.ts")
+    : undefined;
   const layoutPath = files.includes("layout.ts")
     ? join(currentDir, "layout.ts")
     : undefined;
@@ -144,6 +149,7 @@ async function scanRecursive(
       dataPath,
       actionPath,
       layouts: currentLayouts,
+      loadingPath,
       params: [...params],
     });
   }
