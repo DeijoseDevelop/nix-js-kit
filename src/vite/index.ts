@@ -2,7 +2,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, relative, resolve } from "node:path";
 import type { Plugin, Connect, ViteDevServer } from "vite";
 import { scanRoutes } from "../router/route-scanner";
-import { scanActions } from "../action/scan";
+import { scanActions, type ActionRegistry } from "../action/scan";
 import { handleActionRequest } from "../action/server";
 import { scanIslands } from "../island/scan";
 import { buildEntrySource } from "../island/generate-entry";
@@ -40,7 +40,7 @@ export function nixJsKit(options: NixJsKitViteOptions = {}): Plugin {
   const hydrateImport = options.hydrateImport ?? "@deijose/nix-js-kit/island";
 
   let routes: Awaited<ReturnType<typeof scanRoutes>> | null = null;
-  let actions: Record<string, string> = {};
+  let actions: ActionRegistry = {};
   let root: string = ".";
 
   return {
@@ -71,9 +71,14 @@ export function nixJsKit(options: NixJsKitViteOptions = {}): Plugin {
         if (urlPath === "/__nix-js/actions" && req.method === "POST") {
           try {
             const body = await readRequestBody(req);
+            const headers = new Headers();
+            const contentType = req.headers["content-type"];
+            const accept = req.headers["accept"];
+            if (contentType) headers.set("Content-Type", contentType);
+            if (accept) headers.set("Accept", accept);
             const request = new Request(`http://${req.headers.host ?? "localhost"}${req.url}`, {
               method: "POST",
-              headers: { "Content-Type": "application/json" },
+              headers,
               body,
             });
             const response = await handleActionRequest(request, resolveAction);
@@ -121,9 +126,10 @@ function createSsrLoader(server: ViteDevServer, root: string) {
   };
 }
 
-function createActionResolver(actions: Record<string, string>) {
-  return async (name: string) => {
-    const actionPath = actions[name];
+function createActionResolver(actions: import("../action/scan").ActionRegistry) {
+  return async (name: string, page?: string) => {
+    const pageActions = page ? actions[page] : Object.values(actions).find((p) => p[name]) ?? undefined;
+    const actionPath = pageActions ? pageActions[name] : undefined;
     if (!actionPath) return undefined;
     const mod = (await import(actionPath)) as Record<string, unknown>;
     const action = mod[name];
@@ -148,7 +154,7 @@ function readRequestBody(req: Connect.IncomingMessage): Promise<string> {
 
 interface SsrHandlerOptions {
   routes: Awaited<ReturnType<typeof scanRoutes>> | null;
-  actions: Record<string, string>;
+  actions: ActionRegistry;
   clientEntry: string;
   lang: string;
   ssrLoad: (path: string) => Promise<unknown>;

@@ -33,8 +33,9 @@ export async function createSsrServer(options: SsrServerOptions): Promise<SsrSer
   const routes = await scanRoutes(options.appDir);
   const actions = await scanActions(options.appDir);
 
-  const resolveAction = async (name: string) => {
-    const actionPath = actions[name];
+  const resolveAction = async (name: string, page?: string) => {
+    const pageActions = page ? actions[page] : Object.values(actions).find((p) => p[name]) ?? undefined;
+    const actionPath = pageActions ? pageActions[name] : undefined;
     if (!actionPath) return undefined;
     const mod = (await import(actionPath)) as Record<string, unknown>;
     const action = mod[name];
@@ -52,9 +53,16 @@ export async function createSsrServer(options: SsrServerOptions): Promise<SsrSer
     if (urlPath === "/__nix-js/actions" && req.method === "POST") {
       try {
         const body = await readRequestBody(req);
+        const headers = new Headers();
+        const contentType = req.headers["content-type"];
+        const accept = req.headers["accept"];
+        const referer = req.headers["referer"];
+        if (contentType) headers.set("Content-Type", contentType);
+        if (accept) headers.set("Accept", accept);
+        if (referer) headers.set("Referer", referer);
         const request = new Request(`http://${req.headers.host ?? "localhost"}${req.url}`, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers,
           body,
         });
         const response = await handleActionRequest(request, resolveAction);

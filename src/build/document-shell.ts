@@ -16,8 +16,8 @@ export interface ShellOptions {
   lang?: string;
   /** Loader data serialized into `<script id="nix-js-data">`. */
   data?: unknown;
-  /** Action registry serialized into `<script id="nix-js-actions">`. */
-  actions?: Record<string, string>;
+  /** Per-page action registry serialized into `<script id="nix-js-actions">`. */
+  actions?: Record<string, Record<string, string>>;
   /** Path to the client entry module, e.g. `/_nix-js/entry-client.js`. */
   clientEntry?: string;
 }

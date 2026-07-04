@@ -4,6 +4,7 @@ import { documentShell } from "../build/document-shell";
 import type { PageRoute, ScannedRoutes } from "../router/route-scanner";
 import type { BuildConfig } from "../build/build";
 import type { PageDataLoad, PageProps, RouteParams } from "../types";
+import type { ActionRegistry } from "../action/scan";
 
 export interface RenderPageOptions {
   route: PageRoute;
@@ -12,8 +13,8 @@ export interface RenderPageOptions {
   config: Pick<BuildConfig, "lang" | "clientEntry">;
   /** Custom module loader. Defaults to native dynamic import. */
   importer?: (path: string) => Promise<unknown>;
-  /** Registry of available server actions, keyed by action name. Values are the action file path. */
-  actions?: Record<string, string>;
+  /** Per-page registry of available server actions. */
+  actions?: ActionRegistry;
 }
 
 const defaultImport = (path: string) => import(path);
@@ -73,7 +74,7 @@ export interface RenderErrorPageOptions {
   status: 404 | 500;
   error?: unknown;
   config: Pick<BuildConfig, "lang" | "clientEntry">;
-  actions?: Record<string, string>;
+  actions?: ActionRegistry;
   importer?: (path: string) => Promise<unknown>;
 }
 

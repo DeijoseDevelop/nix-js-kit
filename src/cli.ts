@@ -275,7 +275,7 @@ async function handleRequest(
   req: import("node:http").IncomingMessage,
   res: import("node:http").ServerResponse,
   options: CliOptions,
-  actions: Record<string, string>,
+  actions: import("./action/scan").ActionRegistry,
 ): Promise<void> {
   let urlPath = req.url ?? "/";
   if (urlPath.includes("?")) urlPath = urlPath.split("?")[0];
@@ -284,9 +284,14 @@ async function handleRequest(
   if (urlPath === "/__nix-js/actions" && req.method === "POST") {
     try {
       const body = await readRequestBody(req);
+      const headers = new Headers();
+      const contentType = req.headers["content-type"];
+      const accept = req.headers["accept"];
+      if (contentType) headers.set("Content-Type", contentType);
+      if (accept) headers.set("Accept", accept);
       const request = new Request(`http://${req.headers.host ?? "localhost"}${req.url}`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers,
         body,
       });
       const response = await handleActionRequest(request, createActionResolver(actions));
@@ -323,9 +328,10 @@ async function handleRequest(
   }
 }
 
-function createActionResolver(actions: Record<string, string>) {
-  return async (name: string) => {
-    const actionPath = actions[name];
+function createActionResolver(actions: import("./action/scan").ActionRegistry) {
+  return async (name: string, page?: string) => {
+    const pageActions = page ? actions[page] : Object.values(actions).find((p) => p[name]) ?? undefined;
+    const actionPath = pageActions ? pageActions[name] : undefined;
     if (!actionPath) return undefined;
     const mod = (await import(actionPath)) as Record<string, unknown>;
     const action = mod[name];

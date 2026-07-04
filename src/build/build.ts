@@ -4,7 +4,7 @@ import { scanRoutes, type PageRoute, type ScannedRoutes } from "../router/route-
 import { scanIslands, type IslandModule } from "../island/scan";
 import { generateClientEntry } from "../island/generate-entry";
 import { renderPage, renderErrorPage } from "../ssr/render";
-import { scanActions } from "../action/scan";
+import { scanActions, type ActionRegistry } from "../action/scan";
 import type { RouteParams, GenerateStaticParams } from "../types";
 
 // =============================================================================
@@ -166,7 +166,7 @@ export async function build(config: BuildConfig): Promise<BuildResult> {
 async function buildPage(
   config: BuildConfig,
   route: PageRoute,
-  actions: Record<string, string>,
+  actions: ActionRegistry,
 ): Promise<string> {
   return buildConcretePage(config, route, {}, actions);
 }
@@ -174,7 +174,7 @@ async function buildPage(
 async function buildDynamicPages(
   config: BuildConfig,
   route: PageRoute,
-  actions: Record<string, string>,
+  actions: ActionRegistry,
 ): Promise<string[]> {
   const { generateStaticParams } = (await import(
     route.pagePath
@@ -200,7 +200,7 @@ async function buildConcretePage(
   config: BuildConfig,
   route: PageRoute,
   params: RouteParams,
-  actions: Record<string, string>,
+  actions: ActionRegistry,
 ): Promise<string> {
   const htmlOut = await renderPage({
     route,

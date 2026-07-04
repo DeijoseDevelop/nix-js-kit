@@ -2,6 +2,24 @@
 
 All notable changes to `@deijose/nix-js-kit` will be documented in this file.
 
+## 0.11.0
+
+### Added
+
+- `nixAction` helper in `@deijose/nix-js-kit/action` with reactive `pending`, `error`, and `data` signals.
+- Per-page action scoping: `scanActions` now returns `ActionRegistry` keyed by page URL path.
+- `callAction` accepts an optional `{ page }` option to resolve actions scoped to a specific route.
+- Progressive enhancement: `POST /__nix-js/actions` also accepts HTML form submissions and redirects back when `Accept: application/json` is missing.
+
+### Changed
+
+- Action registry serialized in `<script id="nix-js-actions">` is now grouped by page path.
+- All action resolvers (SSR server, CLI dev/preview, Vite plugin, adapters) resolve by page first, then fall back to a global search.
+- `callAction` signature updated to `callAction(name, args, options?)` where `args` can be a single value or an array.
+- `callAction` now sends `Accept: application/json` so the server returns JSON instead of a redirect.
+- SSR server, CLI dev/preview, and Vite plugin now forward `Content-Type`, `Accept`, and `Referer` headers to the action handler for correct JSON/form negotiation and redirects.
+- README updated with `nixAction`, scoped actions, and progressive enhancement examples.
+
 ## 0.10.0
 
 ### Added

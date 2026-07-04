@@ -128,7 +128,9 @@ Options:
 - **Bun adapter** — `nix-js-kit adapter bun` generates a Bun server entry that serves static files and renders pages on demand.
 - **Node adapter** — `nix-js-kit adapter node` generates a self-contained Node server.
 - **Custom error pages** — `src/app/404.page.ts` and `src/app/500.page.ts` are rendered for 404/500 responses in SSG, SSR, and all adapters.
-- **Server actions** — define `page.action.ts` files next to `page.ts` and call them from the client with `callAction()`.
+- **Server actions** — define `page.action.ts` files next to `page.ts` and call them from the client with `nixAction()` or `callAction()`.
+- **Scoped actions** — actions are registered per page path, so names only collide if they are in the same route.
+- **Progressive enhancement** — actions work from plain HTML forms without JavaScript.
 - **`renderToString` for Nix.js templates** without touching the Nix.js core.
 - **Happy DOM** as a build-time dependency only — the Nix.js client bundle stays dependency-free.
 - **Islands** via `island()` helper — mark interactive components and hydrate them on the client with `hydrateIslands`.
@@ -149,7 +151,7 @@ Options:
 | v0.7 | Vercel adapter + DX improvements |
 | v0.8 | Netlify adapter + Bun adapter |
 | v0.9 | Server actions ✅ |
-| v1.0 | Stabilization: test suite, error handling ✅, Node adapter ✅, and action DX |
+| v1.0 | Stabilization: test suite, error handling ✅, Node adapter ✅, and action DX ✅ |
 
 ## API
 
@@ -322,10 +324,11 @@ export const generateStaticParams = async () => {
 ### Server actions
 
 Create a `page.action.ts` file next to a `page.ts` and export async functions.
-They run on the server and can be called from the client with `callAction()`:
+They run on the server and can be called from the client with `callAction()` or
+`nixAction()`:
 
 ```ts
-// src/app/page.action.ts
+// src/app/contact/page.action.ts
 export async function submitContact(data: { name: string; email: string }) {
   // validate, write to DB, send email, etc.
   return { ok: true };
@@ -333,13 +336,67 @@ export async function submitContact(data: { name: string; email: string }) {
 ```
 
 ```ts
-// src/app/page.ts or any island
-import { callAction } from "@deijose/nix-js-kit/action";
+// src/app/contact/page.ts or any island
+import { nixAction } from "@deijose/nix-js-kit/action";
 
-const result = await callAction("submitContact", { name: "Ada", email: "ada@example.com" });
+const contact = nixAction("submitContact", { page: "/contact" });
+
+// inside a template
+html`
+  <form @submit=${(e: Event) => {
+    e.preventDefault();
+    contact.submit({ name: "Ada", email: "ada@example.com" });
+  }}>
+    <input name="name" />
+    <input name="email" />
+    <button type="submit" disabled=${() => contact.pending.value}>
+      ${() => (contact.pending.value ? "Sending..." : "Send")}
+    </button>
+  </form>
+  ${() => contact.error.value ? html`<p>${contact.error.value.message}</p>` : null}
+  ${() => contact.data.value ? html`<p>Sent!</p>` : null}
+`
 ```
 
-The framework exposes a `POST /__nix-js/actions` endpoint in every server mode
+`nixAction` returns a reactive handle with:
+
+- `submit(input)` — calls the action and updates the signals.
+- `pending` — signal that is `true` while the action is running.
+- `error` — signal with the last error, or `null`.
+- `data` — signal with the last successful result, or `null`.
+
+The `page` option scopes the action to a specific route, avoiding name
+collisions between different `page.action.ts` files. If you omit it, the
+framework falls back to searching all scanned actions by name.
+
+For lower-level control, use `callAction` directly:
+
+```ts
+import { callAction } from "@deijose/nix-js-kit/action";
+
+const result = await callAction("submitContact", { name: "Ada", email: "ada@example.com" }, { page: "/contact" });
+```
+
+#### Progressive enhancement
+
+Actions also work without JavaScript. Add hidden fields to a plain HTML form
+and POST to `/__nix-js/actions`:
+
+```html
+<form action="/__nix-js/actions" method="POST">
+  <input type="hidden" name="__nix_action_name" value="submitContact" />
+  <input type="hidden" name="__nix_action_page" value="/contact" />
+  <input name="name" />
+  <input name="email" />
+  <button type="submit">Send</button>
+</form>
+```
+
+The server runs the action and redirects back to the referring page (or to the
+string returned by the action). If the client sends `Accept: application/json`,
+the result is returned as JSON instead.
+
+The framework exposes the `POST /__nix-js/actions` endpoint in every server mode
 (`dev`, `preview`, `start` and all deployment adapters). The action name is
 resolved against the scanned `page.action.ts` modules and its return value is
 serialized as JSON.
