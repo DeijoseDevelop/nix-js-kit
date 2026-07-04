@@ -62,7 +62,14 @@ export function nixJsKit(options: NixJsKitViteOptions = {}): Plugin {
 
     configureServer(server) {
       const ssrLoad = createSsrLoader(server, root);
-      const resolveAction = createActionResolver(actions);
+      const resolveAction = createActionResolver(() => actions, ssrLoad);
+
+      const appDirPath = resolve(root, appDir);
+      const islandsDirPath = resolve(root, islandsDir);
+      setupHmr(server, appDirPath, islandsDirPath, root, generatedEntry, hydrateImport, () => {
+        routes = null;
+        actions = {};
+      });
 
       server.middlewares.use(async (req, res, next) => {
         const urlPath = req.url ?? "/";
@@ -106,8 +113,8 @@ export function nixJsKit(options: NixJsKitViteOptions = {}): Plugin {
         }
 
         const handled = await handleSsrRequest(req, res, next, {
-          routes,
-          actions,
+          routes: routes ?? (routes = await scanRoutes(appDirPath)),
+          actions: Object.keys(actions).length ? actions : (actions = await scanActions(appDirPath)),
           clientEntry,
           lang,
           ssrLoad,
@@ -118,6 +125,62 @@ export function nixJsKit(options: NixJsKitViteOptions = {}): Plugin {
   };
 }
 
+function setupHmr(
+  server: ViteDevServer,
+  appDirPath: string,
+  islandsDirPath: string,
+  root: string,
+  generatedEntry: string,
+  hydrateImport: string,
+  invalidate: () => void,
+) {
+  const isRelevant = (path: string) =>
+    path.startsWith(appDirPath) || path.startsWith(islandsDirPath);
+
+  async function regenerateIslandEntry() {
+    const islands = await scanIslands(islandsDirPath);
+    const entryPath = resolve(root, generatedEntry);
+    const source = buildEntrySource(islands, entryPath, hydrateImport);
+    await mkdir(dirname(entryPath), { recursive: true });
+    await writeFile(entryPath, source, "utf8");
+    const entryMod = server.moduleGraph.getModuleById(entryPath);
+    if (entryMod) server.moduleGraph.invalidateModule(entryMod);
+  }
+
+  server.watcher.on("change", async (path) => {
+    if (!isRelevant(path)) return;
+    invalidate();
+    const mod = server.moduleGraph.getModuleById(path);
+    if (mod) server.moduleGraph.invalidateModule(mod);
+    if (path.startsWith(islandsDirPath)) {
+      await regenerateIslandEntry();
+      console.log("[nix-js-kit] HMR reload islands after change:", path);
+    } else if (path.includes(".action.ts") || path.includes(".data.ts") || path.includes("page.ts") || path.includes("layout.ts")) {
+      console.log("[nix-js-kit] HMR reload routes/actions after change:", path);
+    }
+  });
+
+  server.watcher.on("add", async (path) => {
+    if (!isRelevant(path)) return;
+    invalidate();
+    if (path.startsWith(islandsDirPath)) {
+      await regenerateIslandEntry();
+    }
+    console.log("[nix-js-kit] HMR new file detected:", path);
+  });
+
+  server.watcher.on("unlink", async (path) => {
+    if (!isRelevant(path)) return;
+    invalidate();
+    const mod = server.moduleGraph.getModuleById(path);
+    if (mod) server.moduleGraph.invalidateModule(mod);
+    if (path.startsWith(islandsDirPath)) {
+      await regenerateIslandEntry();
+    }
+    console.log("[nix-js-kit] HMR file removed:", path);
+  });
+}
+
 function createSsrLoader(server: ViteDevServer, root: string) {
   return (filePath: string) => {
     const rel = relative(root, filePath);
@@ -126,12 +189,16 @@ function createSsrLoader(server: ViteDevServer, root: string) {
   };
 }
 
-function createActionResolver(actions: import("../action/scan").ActionRegistry) {
+function createActionResolver(
+  getActions: () => import("../action/scan").ActionRegistry,
+  ssrLoad: (path: string) => Promise<unknown>,
+) {
   return async (name: string, page?: string) => {
+    const actions = getActions();
     const pageActions = page ? actions[page] : Object.values(actions).find((p) => p[name]) ?? undefined;
     const actionPath = pageActions ? pageActions[name] : undefined;
     if (!actionPath) return undefined;
-    const mod = (await import(actionPath)) as Record<string, unknown>;
+    const mod = (await ssrLoad(actionPath)) as Record<string, unknown>;
     const action = mod[name];
     if (typeof action === "function") {
       return action as (...args: unknown[]) => unknown;

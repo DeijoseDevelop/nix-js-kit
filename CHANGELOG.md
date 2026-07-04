@@ -10,6 +10,7 @@ All notable changes to `@deijose/nix-js-kit` will be documented in this file.
 - Per-page action scoping: `scanActions` now returns `ActionRegistry` keyed by page URL path.
 - `callAction` accepts an optional `{ page }` option to resolve actions scoped to a specific route.
 - Progressive enhancement: `POST /__nix-js/actions` also accepts HTML form submissions and redirects back when `Accept: application/json` is missing.
+- HMR for routes, actions, loaders, and islands in the Vite dev plugin.
 
 ### Changed
 
