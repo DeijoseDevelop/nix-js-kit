@@ -2,6 +2,13 @@
 
 All notable changes to `@deijose/nix-js-kit` will be documented in this file.
 
+## 0.11.6
+
+### Added
+
+- Integration test for the preview server (`doPreview`): serves static files and handles server actions.
+- `doPreview` now returns the Node `http.Server` instance for easier programmatic control and testing.
+
 ## 0.11.5
 
 ### Added

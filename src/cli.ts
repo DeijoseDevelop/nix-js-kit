@@ -224,7 +224,7 @@ async function doDev(options: CliOptions): Promise<void> {
   watchFiles(options, server);
 }
 
-async function doPreview(options: CliOptions): Promise<void> {
+export async function doPreview(options: CliOptions): Promise<import("node:http").Server> {
   try {
     const s = await stat(options.outDir);
     if (!s.isDirectory()) {
@@ -245,6 +245,7 @@ async function doPreview(options: CliOptions): Promise<void> {
   server.listen(options.port, options.host, () => {
     console.log(`\n  → Preview server http://${options.host}:${options.port}`);
   });
+  return server;
 }
 
 async function doStart(options: CliOptions): Promise<void> {
