@@ -2,6 +2,13 @@
 
 All notable changes to `@deijose/nix-js-kit` will be documented in this file.
 
+## 0.11.1
+
+### Added
+
+- HMR for routes, actions, loaders, and islands in the Vite dev plugin.
+- Vite dev plugin now resolves actions via `ssrLoadModule` so changed `page.action.ts` files are reloaded without a server restart.
+
 ## 0.11.0
 
 ### Added
@@ -10,7 +17,6 @@ All notable changes to `@deijose/nix-js-kit` will be documented in this file.
 - Per-page action scoping: `scanActions` now returns `ActionRegistry` keyed by page URL path.
 - `callAction` accepts an optional `{ page }` option to resolve actions scoped to a specific route.
 - Progressive enhancement: `POST /__nix-js/actions` also accepts HTML form submissions and redirects back when `Accept: application/json` is missing.
-- HMR for routes, actions, loaders, and islands in the Vite dev plugin.
 
 ### Changed
 
