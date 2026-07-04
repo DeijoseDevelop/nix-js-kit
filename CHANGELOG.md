@@ -2,6 +2,12 @@
 
 All notable changes to `@deijose/nix-js-kit` will be documented in this file.
 
+## 1.2.3
+
+### Fixed
+
+- Dynamic API routes (`[slug]/route.ts`) now receive route parameters as a second argument (`{ params }`) in `nix-js-kit start`, `preview` and `dev`, matching the behavior already documented for API routes.
+
 ## 1.2.2
 
 ### Changed

@@ -114,7 +114,10 @@ export async function createSsrServer(options: SsrServerOptions): Promise<SsrSer
     const apiMatch = matchApiRoute(urlPath, routes.api);
     if (apiMatch) {
       try {
-        const mod = (await import(apiMatch.route.routePath)) as Record<string, (request: Request) => unknown>;
+        const mod = (await import(apiMatch.route.routePath)) as Record<
+          string,
+          (request: Request, context?: { params: Record<string, string | string[]> }) => unknown
+        >;
         const handler = mod[req.method ?? "GET"];
         if (typeof handler !== "function") {
           res.writeHead(405, { "Content-Type": "text/plain" });
@@ -132,7 +135,7 @@ export async function createSsrServer(options: SsrServerOptions): Promise<SsrSer
           headers,
           body,
         });
-        const response = (await handler(request)) as Response;
+        const response = (await handler(request, { params: apiMatch.params })) as Response;
         res.writeHead(response.status, Object.fromEntries(response.headers.entries()));
         res.end(Buffer.from(await response.arrayBuffer()));
       } catch (err) {
