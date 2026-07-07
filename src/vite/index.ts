@@ -110,6 +110,7 @@ export function nixJsKit(options: NixJsKitViteOptions = {}): Plugin[] {
           if (transformed) {
             res.writeHead(200, {
               "Content-Type": "application/javascript; charset=utf-8",
+              "Cache-Control": "no-store, must-revalidate",
             });
             res.end(transformed.code);
             return;
@@ -303,7 +304,10 @@ async function handleSsrRequest(
         importer: options.ssrLoad,
         actions: publicActions,
       });
-      res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+      res.writeHead(200, {
+        "Content-Type": "text/html; charset=utf-8",
+        "Cache-Control": "no-store, must-revalidate",
+      });
       res.end(html);
       return true;
     } catch (err) {
@@ -317,10 +321,16 @@ async function handleSsrRequest(
         importer: options.ssrLoad,
       });
       if (errorResult) {
-        res.writeHead(errorResult.status, { "Content-Type": "text/html; charset=utf-8" });
+        res.writeHead(errorResult.status, {
+          "Content-Type": "text/html; charset=utf-8",
+          "Cache-Control": "no-store, must-revalidate",
+        });
         res.end(errorResult.html);
       } else {
-        res.writeHead(500, { "Content-Type": "text/plain; charset=utf-8" });
+        res.writeHead(500, {
+          "Content-Type": "text/plain; charset=utf-8",
+          "Cache-Control": "no-store, must-revalidate",
+        });
         res.end(String(err));
       }
       return true;
@@ -335,7 +345,10 @@ async function handleSsrRequest(
     importer: options.ssrLoad,
   });
   if (errorResult) {
-    res.writeHead(errorResult.status, { "Content-Type": "text/html; charset=utf-8" });
+    res.writeHead(errorResult.status, {
+      "Content-Type": "text/html; charset=utf-8",
+      "Cache-Control": "no-store, must-revalidate",
+    });
     res.end(errorResult.html);
     return true;
   }

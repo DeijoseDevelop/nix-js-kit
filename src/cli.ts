@@ -275,7 +275,7 @@ async function doDev(options: CliOptions): Promise<void> {
 
   const actions = await scanActions(transformedDir);
   const routes = await scanRoutes(transformedDir);
-  const server = createServer((req, res) => handleRequest(req, res, options, actions, routes));
+  const server = createServer((req, res) => handleRequest(req, res, options, actions, routes, true));
   server.listen(options.port, options.host, () => {
     console.log(`\n  → Dev server http://${options.host}:${options.port}`);
   });
@@ -370,8 +370,12 @@ async function handleRequest(
   options: CliOptions,
   actions: import("./action/scan").ActionRegistry,
   routes: import("./router/route-scanner").ScannedRoutes,
+  noCache = false,
 ): Promise<void> {
   const publicActions = actionNames(actions);
+
+  const cacheHeaders = (base: Record<string, string>): Record<string, string> =>
+    noCache ? { ...base, "Cache-Control": "no-store, must-revalidate" } : base;
   let urlPath = req.url ?? "/";
   if (urlPath.includes("?")) urlPath = urlPath.split("?")[0];
 
@@ -394,7 +398,7 @@ async function handleRequest(
       res.end(await response.text());
     } catch (err) {
       console.error("[nix-js-kit] action error:", err);
-      res.writeHead(500, { "Content-Type": "text/plain; charset=utf-8" });
+      res.writeHead(500, cacheHeaders({ "Content-Type": "text/plain; charset=utf-8" }));
       res.end(String(err));
     }
     return;
@@ -414,11 +418,11 @@ async function handleRequest(
         config: { lang: options.lang, clientEntry: options.clientEntry },
         actions: publicActions,
       });
-      res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+      res.writeHead(200, cacheHeaders({ "Content-Type": "text/html; charset=utf-8" }));
       res.end(html);
     } catch (err) {
       console.error("[nix-js-kit] render endpoint error:", err);
-      res.writeHead(500, { "Content-Type": "text/plain; charset=utf-8" });
+      res.writeHead(500, cacheHeaders({ "Content-Type": "text/plain; charset=utf-8" }));
       res.end(String(err));
     }
     return;
@@ -434,7 +438,7 @@ async function handleRequest(
       >;
       const handler = mod[req.method ?? "GET"];
       if (typeof handler !== "function") {
-        res.writeHead(405, { "Content-Type": "text/plain" });
+        res.writeHead(405, cacheHeaders({ "Content-Type": "text/plain" }));
         res.end(`Method not allowed: ${req.method}`);
         return;
       }
@@ -470,13 +474,13 @@ async function handleRequest(
   try {
     const data = await readFile(filePath);
     const contentType = guessContentType(filePath);
-    res.writeHead(200, { "Content-Type": contentType });
+    res.writeHead(200, cacheHeaders({ "Content-Type": contentType }));
     res.end(data);
     return;
   } catch (err) {
     const code = (err as NodeJS.ErrnoException).code;
     if (code !== "ENOENT" && code !== "EISDIR") {
-      res.writeHead(500, { "Content-Type": "text/plain; charset=utf-8" });
+      res.writeHead(500, cacheHeaders({ "Content-Type": "text/plain; charset=utf-8" }));
       res.end(String(err));
       return;
     }
@@ -487,7 +491,7 @@ async function handleRequest(
     const { renderPage } = await import("./ssr/render");
     const match = matchRoute(originalPath, routes.pages);
     if (!match) {
-      res.writeHead(404, { "Content-Type": "text/plain; charset=utf-8" });
+      res.writeHead(404, cacheHeaders({ "Content-Type": "text/plain; charset=utf-8" }));
       res.end(`Not found: ${req.url}`);
       return;
     }
@@ -498,11 +502,11 @@ async function handleRequest(
       config: { lang: options.lang, clientEntry: options.clientEntry },
       actions: publicActions,
     });
-    res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+    res.writeHead(200, cacheHeaders({ "Content-Type": "text/html; charset=utf-8" }));
     res.end(result.html);
   } catch (err) {
     console.error("[nix-js-kit] preview fallback render error:", err);
-    res.writeHead(500, { "Content-Type": "text/plain; charset=utf-8" });
+    res.writeHead(500, cacheHeaders({ "Content-Type": "text/plain; charset=utf-8" }));
     res.end(String(err));
   }
 }

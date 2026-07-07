@@ -2,6 +2,27 @@
 
 All notable changes to `@deijose/nix-js-kit` will be documented in this file.
 
+## 1.2.5
+
+### Added
+
+- `layout.data.ts` support: `renderPage` now resolves the nearest `layout.data.ts` loader for each `layout.ts` and passes the returned data to the layout component.
+- Data loaders (page and layout) now receive the current `Request` object in their context, enabling SSR auth, cookies, and per-request headers.
+- Streaming and SSR servers forward the request to both static and streaming render paths so loaders can read session cookies.
+
+### Changed
+
+- `LayoutProps` data is now populated from `layout.data.ts` when present; `PageProps` retains the `layoutData` slot for future nested layout support.
+
+## 1.2.4
+
+### Fixed
+
+- Client router now re-hydrates islands after navigating to a new page. The generated client entry listens for the `nix-js:rendered` event and mounts islands over the swapped page body.
+- Hydration no longer flashes the static markup: it renders the live island into a `DocumentFragment` and swaps the entire island content with `replaceChildren` in one DOM operation.
+- Old island effects are disposed before the client router swaps `#app.innerHTML`, preventing leaked effects and stale DOM writes after SPA navigation.
+- Vite interpolation plugin rewrites partial attribute interpolations (e.g. `href="/blog/${slug}"`) into a single interpolation in both `src/app` and `src/islands` files during the source transformation step.
+
 ## 1.2.3
 
 ### Fixed

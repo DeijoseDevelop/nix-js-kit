@@ -1,3 +1,5 @@
+import { cleanupHydratedIslands } from "../island/index.js";
+
 /**
  * Client-side router for Nix Kit.
  *
@@ -34,6 +36,7 @@ async function navigate(path: string, push = true): Promise<boolean> {
   const app = document.getElementById("app");
   if (!app) return false;
 
+  cleanupHydratedIslands();
   app.innerHTML = html;
   const titleMatch = html.match(/<title>([^<]*)<\/title>/);
   if (titleMatch) document.title = titleMatch[1];

@@ -13,6 +13,7 @@ export interface StreamingPageOptions {
   config: Pick<BuildConfig, "lang" | "clientEntry">;
   importer?: (path: string) => Promise<unknown>;
   actions?: Record<string, string[]>;
+  request?: Request;
 }
 
 const defaultImport = (path: string) => import(path);
@@ -71,6 +72,7 @@ export interface RenderPageBodyOptions {
   config: Pick<BuildConfig, "lang" | "clientEntry">;
   actions?: Record<string, string[]>;
   importer?: (path: string) => Promise<unknown>;
+  request?: Request;
 }
 
 /**
@@ -78,7 +80,7 @@ export interface RenderPageBodyOptions {
  * to inject the real content into the shell.
  */
 export async function renderPageBody(options: RenderPageBodyOptions): Promise<string> {
-  const { routes, pathname, searchParams, config, actions, importer = defaultImport } = options;
+  const { routes, pathname, searchParams, config, actions, importer = defaultImport, request } = options;
   const match = matchRoute(pathname, routes.pages);
   if (!match) {
     throw new Error(`No route found for ${pathname}`);
@@ -91,6 +93,7 @@ export async function renderPageBody(options: RenderPageBodyOptions): Promise<st
     config,
     actions,
     importer,
+    request,
   });
 
   const bodyMatch = result.html.match(/<div id="app">([\s\S]*)<\/div>\s*(<script|$)/);

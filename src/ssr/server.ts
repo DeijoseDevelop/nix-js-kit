@@ -93,12 +93,24 @@ export async function createSsrServer(options: SsrServerOptions): Promise<SsrSer
       const page = renderUrl.searchParams.get("page") ?? "/";
       const search = renderUrl.searchParams.get("search") ?? "";
       try {
+        const headers = new Headers();
+        const contentType = req.headers["content-type"];
+        const accept = req.headers["accept"];
+        const cookie = req.headers["cookie"];
+        if (contentType) headers.set("Content-Type", contentType);
+        if (accept) headers.set("Accept", accept);
+        if (cookie) headers.set("Cookie", cookie);
+        const request = new Request(`http://${req.headers.host ?? "localhost"}${req.url}`, {
+          method: req.method,
+          headers,
+        });
         const html = await renderPageBody({
           routes,
           pathname: page,
           searchParams: new URLSearchParams(search),
           config: { lang: options.lang ?? "es", clientEntry: options.clientEntry },
           actions: publicActions,
+          request,
         });
         res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
         res.end(html);
@@ -161,6 +173,18 @@ export async function createSsrServer(options: SsrServerOptions): Promise<SsrSer
     const config = { lang: options.lang ?? "es", clientEntry: options.clientEntry };
     if (match) {
       try {
+        const headers = new Headers();
+        const contentType = req.headers["content-type"];
+        const accept = req.headers["accept"];
+        const cookie = req.headers["cookie"];
+        if (contentType) headers.set("Content-Type", contentType);
+        if (accept) headers.set("Accept", accept);
+        if (cookie) headers.set("Cookie", cookie);
+        const request = new Request(`http://${req.headers.host ?? "localhost"}${req.url}`, {
+          method: req.method,
+          headers,
+        });
+
         let html: string;
         const revalidate = match.route.dataPath
           ? ((await import(match.route.dataPath)) as { revalidate?: number }).revalidate
@@ -174,6 +198,7 @@ export async function createSsrServer(options: SsrServerOptions): Promise<SsrSer
             searchParams: match.searchParams,
             config,
             actions: publicActions,
+            request,
           });
         } else if (options.cacheDir && typeof ttl === "number") {
           const cached = await getCachedHtml(options.cacheDir, urlPath);
@@ -186,6 +211,7 @@ export async function createSsrServer(options: SsrServerOptions): Promise<SsrSer
               searchParams: match.searchParams,
               config,
               actions: publicActions,
+              request,
             });
             html = result.html;
             await setCachedHtml(options.cacheDir, urlPath, html, ttl);
@@ -197,6 +223,7 @@ export async function createSsrServer(options: SsrServerOptions): Promise<SsrSer
             searchParams: match.searchParams,
             config,
             actions: publicActions,
+            request,
           })).html;
         }
         res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });

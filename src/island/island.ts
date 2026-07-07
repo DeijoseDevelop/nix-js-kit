@@ -35,9 +35,13 @@ export function island<TProps>(
 ): NixTemplate {
   // Render the component to a string synchronously. We create a temporary
   // container, render into it, and read innerHTML. This is server-side only.
+  // `_render` returns a dispose function; we call it after reading innerHTML so
+  // the island's effects don't stay subscribed after SSR (which would crash
+  // when async signal writes re-render into a torn-down DOM).
   const container = document.createElement("div");
-  component(props)._render(container, null);
+  const dispose = component(props)._render(container, null);
   const innerHtml = container.innerHTML;
+  if (typeof dispose === "function") dispose();
 
   const markerHtml = `<div data-nix-js-island="${escapeHtml(name)}" data-directive="${directive}" data-props='${serializeProps(props)}'>${innerHtml}</div>`;
 

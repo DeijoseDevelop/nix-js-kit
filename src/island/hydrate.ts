@@ -3,10 +3,13 @@ import type { NixTemplate } from "@deijose/nix-js";
 // =============================================================================
 // --- Client-side island hydration ---
 // =============================================================================
-//
+
+// Keep track of every active island dispose so we can clean them up before a
+// client-side navigation swaps the whole #app content.
+const _islandDisposes = new Set<() => void>();
+
 // Finds [data-nix-js-island] markers in the current document and mounts the
 // corresponding interactive components over them. This runs in the browser.
-// =============================================================================
 
 export type IslandComponent<TProps = unknown> = (props: TProps) => NixTemplate;
 
@@ -40,9 +43,26 @@ function hydrate(marker: IslandMarker, registry: IslandRegistry): void {
     return;
   }
 
-  // Clear the static HTML and mount the live component.
-  marker.el.innerHTML = "";
-  Component(marker.props)._render(marker.el, null);
+  // Clean up a previous hydration for this same marker wrapper.
+  const prevDispose = (marker.el as any).__nix_island_dispose;
+  if (typeof prevDispose === "function") {
+    prevDispose();
+  }
+
+  // Render the live component into a fragment and swap the entire island content
+  // in one DOM operation to avoid a visible flash.
+  const fragment = document.createDocumentFragment();
+  const dispose = Component(marker.props)._render(fragment, null);
+
+  const wrappedDispose = () => {
+    dispose();
+    _islandDisposes.delete(wrappedDispose);
+  };
+  (marker.el as any).__nix_island_dispose = wrappedDispose;
+  _islandDisposes.add(wrappedDispose);
+
+  const children = Array.from(fragment.childNodes);
+  marker.el.replaceChildren(...children);
 }
 
 /**
@@ -50,6 +70,17 @@ function hydrate(marker: IslandMarker, registry: IslandRegistry): void {
  *
  * @param registry Map from island name to component factory.
  */
+/**
+ * Dispose all currently hydrated islands. Called by the client router before
+ * swapping the page body to prevent leaked effects and stale DOM writes.
+ */
+export function cleanupHydratedIslands(): void {
+  for (const dispose of _islandDisposes) {
+    dispose();
+  }
+  _islandDisposes.clear();
+}
+
 export function hydrateIslands(registry: IslandRegistry): void {
   if (typeof window === "undefined") return;
 
