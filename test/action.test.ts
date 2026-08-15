@@ -2,6 +2,12 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { scanActions } from "../src/action/scan.ts";
 import { handleActionRequest } from "../src/action/server.ts";
+import { verifyOrigin } from "../src/action/origin.ts";
+import {
+  encodeActionErrorCookie,
+  decodeActionErrorCookie,
+  ACTION_ERROR_COOKIE,
+} from "../src/action/error-store.ts";
 import { fail, redirect } from "../src/errors.ts";
 import { scanRoutes } from "../src/router/route-scanner.ts";
 import { resolveActionPageKey } from "../src/ssr/server.ts";
@@ -94,7 +100,7 @@ describe("handleActionRequest", () => {
     assert.deepEqual(body.data, { field: "email", message: "Invalid email" });
   });
 
-  it("redirects with ActionFailure data for form POSTs", async () => {
+  it("redirects with ActionFailure data in a cookie for form POSTs", async () => {
     const badAction = async () => fail(400, { field: "email", message: "Invalid email" });
     const request = new Request("http://localhost/__nix-js/actions", {
       method: "POST",
@@ -104,7 +110,15 @@ describe("handleActionRequest", () => {
     const response = await handleActionRequest(request, async () => badAction);
     assert.equal(response.status, 303);
     const location = response.headers.get("Location");
-    assert.ok(location?.startsWith("/contact?__nix_js_action_error="), "should redirect back with error query");
+    assert.equal(location, "/contact");
+    // No query param — errors must not leak into the URL.
+    assert.ok(!location?.includes("__nix_js_action_error"), "should not put error in URL");
+    // Error is relayed via a Set-Cookie header.
+    const setCookie = response.headers.get("Set-Cookie");
+    assert.ok(setCookie, "should set a cookie");
+    assert.ok(setCookie.startsWith(`${ACTION_ERROR_COOKIE}=`), "cookie should have the right name");
+    assert.ok(setCookie.includes("SameSite=Lax"), "cookie should be SameSite=Lax");
+    assert.ok(setCookie.includes("Max-Age=15"), "cookie should be short-lived");
   });
 
   it("returns a JSON redirect payload for JSON requests", async () => {
@@ -132,5 +146,106 @@ describe("handleActionRequest", () => {
     const response = await handleActionRequest(request, async () => redirectAction);
     assert.equal(response.status, 303);
     assert.equal(response.headers.get("Location"), "/login");
+  });
+});
+
+describe("verifyOrigin (CSRF protection)", () => {
+  it("allows same-origin requests via Origin header", () => {
+    const request = new Request("http://localhost:3000/__nix-js/actions", {
+      method: "POST",
+      headers: { Origin: "http://localhost:3000" },
+    });
+    assert.equal(verifyOrigin(request), undefined);
+  });
+
+  it("allows same-origin requests via Referer fallback", () => {
+    const request = new Request("http://localhost:3000/__nix-js/actions", {
+      method: "POST",
+      headers: { Referer: "http://localhost:3000/contact" },
+    });
+    assert.equal(verifyOrigin(request), undefined);
+  });
+
+  it("rejects cross-origin requests", () => {
+    const request = new Request("http://localhost:3000/__nix-js/actions", {
+      method: "POST",
+      headers: { Origin: "https://evil.example.com" },
+    });
+    const error = verifyOrigin(request);
+    assert.ok(error, "should reject cross-origin");
+    assert.ok(error.includes("Cross-origin"), "error message should mention cross-origin");
+  });
+
+  it("allows requests without Origin and Referer by default", () => {
+    const request = new Request("http://localhost:3000/__nix-js/actions", {
+      method: "POST",
+    });
+    assert.equal(verifyOrigin(request), undefined);
+  });
+
+  it("rejects requests without Origin and Referer when strictOrigin is true", () => {
+    const request = new Request("http://localhost:3000/__nix-js/actions", {
+      method: "POST",
+    });
+    const error = verifyOrigin(request, { strictOrigin: true });
+    assert.ok(error, "should reject when strict");
+  });
+
+  it("allows allow-listed origins", () => {
+    const request = new Request("http://localhost:3000/__nix-js/actions", {
+      method: "POST",
+      headers: { Origin: "https://preview.example.com" },
+    });
+    assert.equal(
+      verifyOrigin(request, { allowedOrigins: ["https://preview.example.com"] }),
+      undefined,
+    );
+  });
+});
+
+describe("handleActionRequest CSRF integration", () => {
+  it("rejects cross-origin POSTs with 403", async () => {
+    const action = async () => "ok";
+    const request = new Request("http://localhost:3000/__nix-js/actions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+        Origin: "https://evil.example.com",
+      },
+      body: JSON.stringify({ name: "test", args: [] }),
+    });
+    const response = await handleActionRequest(request, async () => action);
+    assert.equal(response.status, 403);
+  });
+});
+
+describe("action error cookie store", () => {
+  it("round-trips small payloads inline in the cookie", () => {
+    const data = { field: "email", message: "Invalid" };
+    const { value, storeId } = encodeActionErrorCookie(data, 400);
+    assert.equal(storeId, undefined, "small payload should not use the store");
+    const decoded = decodeActionErrorCookie(value);
+    assert.deepEqual(decoded, { data, status: 400 });
+  });
+
+  it("uses the in-memory store for large payloads", () => {
+    const largeData = { errors: "x".repeat(5000) };
+    const { value, storeId } = encodeActionErrorCookie(largeData, 400);
+    assert.ok(storeId, "large payload should use the store");
+    assert.ok(value.startsWith("id:"), "cookie value should reference the store id");
+    const decoded = decodeActionErrorCookie(value);
+    assert.deepEqual(decoded, { data: largeData, status: 400 });
+  });
+
+  it("returns undefined for unknown store ids", () => {
+    assert.equal(decodeActionErrorCookie("id:nonexistent"), undefined);
+  });
+
+  it("returns undefined for empty or invalid values", () => {
+    assert.equal(decodeActionErrorCookie(undefined), undefined);
+    assert.equal(decodeActionErrorCookie(null), undefined);
+    assert.equal(decodeActionErrorCookie(""), undefined);
+    assert.equal(decodeActionErrorCookie("!!!invalid-base64!!!"), undefined);
   });
 });

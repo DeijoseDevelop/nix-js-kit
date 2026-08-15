@@ -1,5 +1,10 @@
 import type { ActionRequest } from "./index.js";
 import { isActionFailure, isRedirectResponse } from "../errors.js";
+import { verifyOrigin, originForbidden, type OriginCheckOptions } from "./origin.js";
+import {
+  encodeActionErrorCookie,
+  setActionErrorCookieHeader,
+} from "./error-store.js";
 
 /**
  * Resolves a server action by name and optional page scope.
@@ -8,6 +13,9 @@ export type ActionResolver = (
   name: string,
   page?: string,
 ) => Promise<((...args: unknown[]) => unknown) | undefined>;
+
+/** Options shared by `handleActionRequest` callers for CSRF protection. */
+export interface ActionSecurityOptions extends OriginCheckOptions { }
 
 function parseFormBody(body: string): Record<string, unknown> {
   const params = new URLSearchParams(body);
@@ -108,11 +116,25 @@ async function parseActionRequest(request: Request): Promise<
  * for progressive enhancement. The provided resolver looks up the action
  * implementation, invokes it with the supplied arguments and returns the result
  * as JSON or redirects back to the request origin for form submissions.
+ *
+ * Origin verification (CSRF protection) runs before parsing the body: any
+ * cross-origin POST is rejected with 403 unless its origin is allow-listed via
+ * `security.allowedOrigins`.
+ *
+ * For progressive-enhancement form submissions that fail, the failure payload
+ * is relayed back via a short-lived `__nix_js_action_error` cookie (SameSite=Lax,
+ * Max-Age=15s) instead of a query param, so errors do not leak into browser
+ * history, server logs or third-party Referer headers.
  */
 export async function handleActionRequest(
   request: Request,
   resolveAction: ActionResolver,
+  security: ActionSecurityOptions = {},
 ): Promise<Response> {
+  // CSRF: verify same-origin (or allow-listed) before doing any work.
+  const originError = verifyOrigin(request, security);
+  if (originError) return originForbidden(originError);
+
   const parsed = await parseActionRequest(request);
   if (!parsed.ok) return parsed.response;
 
@@ -137,13 +159,17 @@ export async function handleActionRequest(
           headers: { "Content-Type": "application/json" },
         });
       }
-      // For progressive enhancement, redirect back with the failure data serialized in the URL.
+      // Progressive enhancement: redirect back with the failure in a cookie.
       const referer = request.headers.get("Referer") ?? "/";
       const url = new URL(referer, "http://localhost");
-      url.searchParams.set("__nix_js_action_error", JSON.stringify(result.data));
+      const { value } = encodeActionErrorCookie(result.data, result.status);
       return new Response(null, {
         status: 303,
-        headers: { Location: url.pathname + url.search, "Content-Type": "text/plain" },
+        headers: {
+          Location: url.pathname + url.search,
+          "Content-Type": "text/plain",
+          "Set-Cookie": setActionErrorCookieHeader(value),
+        },
       });
     }
 
@@ -187,3 +213,11 @@ export async function handleActionRequest(
     });
   }
 }
+
+export { verifyOrigin, originForbidden, type OriginCheckOptions } from "./origin.js";
+export {
+  decodeActionErrorCookie,
+  clearActionErrorCookieHeader,
+  setActionErrorCookieHeader,
+  ACTION_ERROR_COOKIE,
+} from "./error-store.js";

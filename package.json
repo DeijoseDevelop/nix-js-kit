@@ -1,6 +1,6 @@
 {
   "name": "@deijose/nix-js-kit",
-  "version": "1.2.7",
+  "version": "1.3.0",
   "description": "Full-stack meta-framework for Nix.js — file-based routing, SSG and islands.",
   "license": "MIT",
   "author": "Deiver Vasquez",
@@ -77,6 +77,16 @@
       "types": "./dist/lib/router/client.d.ts",
       "import": "./dist/lib/router/client.js",
       "require": "./dist/lib/router/client.cjs"
+    },
+    "./content": {
+      "types": "./dist/lib/content/index.d.ts",
+      "import": "./dist/lib/content/index.js",
+      "require": "./dist/lib/content/index.cjs"
+    },
+    "./image": {
+      "types": "./dist/lib/image/index.d.ts",
+      "import": "./dist/lib/image/index.js",
+      "require": "./dist/lib/image/index.cjs"
     }
   },
   "files": [
@@ -113,11 +123,22 @@
     "@deijose/nix-js": "^2.5.3",
     "vite": "^5.0.0 || ^6.0.0 || ^7.0.0 || ^8.0.0"
   },
+  "peerDependenciesMeta": {
+    "marked": {
+      "optional": true
+    },
+    "zod": {
+      "optional": true
+    },
+    "sharp": {
+      "optional": true
+    }
+  },
   "devDependencies": {
     "@deijose/nix-js": "^2.6.0",
     "@types/node": "^22.10.0",
     "terser": "^5.46.0",
-    "typescript": "~5.9.3",
+    "typescript": "^7.0.2",
     "vite": "^8.0.0"
   }
 }

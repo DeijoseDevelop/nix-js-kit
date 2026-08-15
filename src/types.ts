@@ -46,3 +46,62 @@ export type PageDataLoad<TData = unknown> = (
 export type GenerateStaticParams = () =>
   | Promise<RouteParams[]>
   | RouteParams[];
+
+/** OpenGraph metadata for a page. */
+export interface OpenGraphMetadata {
+  /** OG type: website, article, profile, etc. */
+  type?: string;
+  /** OG title (falls back to the page title). */
+  title?: string;
+  /** OG description (falls back to the page description). */
+  description?: string;
+  /** Absolute or relative URL to the canonical page. */
+  url?: string;
+  /** Image URL for social sharing previews. */
+  image?: string;
+  /** Site name shown in social cards. */
+  siteName?: string;
+  /** Locale, e.g. "es_ES". */
+  locale?: string;
+}
+
+/** Twitter card metadata for a page. */
+export interface TwitterMetadata {
+  /** Card type: summary, summary_large_image, player, app. */
+  card?: "summary" | "summary_large_image" | "player" | "app";
+  /** Title (falls back to the page title). */
+  title?: string;
+  /** Description (falls back to the page description). */
+  description?: string;
+  /** Image URL for the card. */
+  image?: string;
+}
+
+/** Page-level metadata emitted into the `<head>` by the document shell. */
+export interface PageMetadata {
+  /** Page title (also used as `<title>` and as fallback for OG/Twitter). */
+  title?: string;
+  /** Meta description. */
+  description?: string;
+  /** Canonical URL. */
+  canonical?: string;
+  /** Robots directive, e.g. "index, follow" or "noindex". */
+  robots?: string;
+  /** OpenGraph metadata for social sharing. */
+  openGraph?: OpenGraphMetadata;
+  /** Twitter card metadata. */
+  twitter?: TwitterMetadata;
+  /** Additional `<meta>` tags as key/value pairs. */
+  other?: Record<string, string>;
+}
+
+/** Context passed to a `generateMetadata` function. */
+export interface MetadataContext extends LoadContext {
+  /** Loader data resolved for the current page, if a loader exists. */
+  data?: unknown;
+}
+
+/** Signature for `generateMetadata` exported by `page.ts` modules. */
+export type GenerateMetadata = (
+  ctx: MetadataContext,
+) => Promise<PageMetadata> | PageMetadata;

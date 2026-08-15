@@ -10,7 +10,6 @@
     "skipLibCheck": true,
     "moduleResolution": "bundler",
     "allowImportingTsExtensions": true,
-    "baseUrl": ".",
     "paths": {
       "@deijose/nix-js-kit": [
         "./src/index.ts"
@@ -23,6 +22,15 @@
       ],
       "@deijose/nix-js-kit/vite": [
         "./src/vite/index.ts"
+      ],
+      "@deijose/nix-js-kit/router": [
+        "./src/router/client.ts"
+      ],
+      "@deijose/nix-js-kit/content": [
+        "./src/content/index.ts"
+      ],
+      "@deijose/nix-js-kit/image": [
+        "./src/image/index.ts"
       ]
     },
     "verbatimModuleSyntax": true,

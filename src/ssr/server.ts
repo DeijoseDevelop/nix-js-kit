@@ -3,11 +3,12 @@ import { readFile, stat } from "node:fs/promises";
 import { extname, join } from "node:path";
 import { scanRoutes } from "../router/route-scanner.js";
 import { scanActions, actionNames } from "../action/scan.js";
-import { handleActionRequest } from "../action/server.js";
+import { handleActionRequest, type ActionSecurityOptions } from "../action/server.js";
 import { getCachedHtml, setCachedHtml } from "../cache.js";
 import { matchApiRoute, matchRoute } from "./match.js";
 import { renderPage, renderErrorPage } from "./render.js";
 import { renderPageBody, renderStreamingPage, RouteNotFoundError } from "./stream.js";
+import { loadMiddleware, matchesMiddleware, runMiddleware } from "../middleware/index.js";
 
 export interface SsrServerOptions {
   /** Absolute path to the app directory (e.g. /project/src/app). */
@@ -29,6 +30,8 @@ export interface SsrServerOptions {
   defaultRevalidate?: number;
   /** If true, render pages with loading.ts boundaries using streaming. */
   streaming?: boolean;
+  /** CSRF / origin policy applied to the server actions endpoint. */
+  actionSecurity?: ActionSecurityOptions;
 }
 
 export interface SsrServer {
@@ -44,6 +47,9 @@ export async function createSsrServer(options: SsrServerOptions): Promise<SsrSer
   const routes = await scanRoutes(options.appDir);
   const actions = await scanActions(options.appDir);
   const publicActions = actionNames(actions);
+
+  // Load user middleware (src/middleware.ts) if it exists.
+  const middleware = options.root ? await loadMiddleware(options.root) : null;
 
   const resolveAction = async (name: string, page?: string) => {
     const pageKey = resolveActionPageKey(page, routes);
@@ -78,7 +84,7 @@ export async function createSsrServer(options: SsrServerOptions): Promise<SsrSer
           headers,
           body,
         });
-        const response = await handleActionRequest(request, resolveAction);
+        const response = await handleActionRequest(request, resolveAction, options.actionSecurity);
         res.writeHead(response.status, Object.fromEntries(response.headers.entries()));
         res.end(await response.text());
       } catch (err) {
@@ -111,6 +117,8 @@ export async function createSsrServer(options: SsrServerOptions): Promise<SsrSer
         // directory is configured, so streamed pages regenerate on a TTL.
         let body: string;
         let title: string;
+        let lastRenderedCookie: string | undefined;
+        let lastRenderedHead: string | undefined;
         const ttl = await resolveTtl(options, page, routes);
         const cacheKey = `/__nix-js/render${page}?${search}`;
         if (options.cacheDir && typeof ttl === "number") {
@@ -129,6 +137,8 @@ export async function createSsrServer(options: SsrServerOptions): Promise<SsrSer
             });
             body = rendered.body;
             title = rendered.title;
+            lastRenderedCookie = rendered.clearActionErrorCookie;
+            lastRenderedHead = rendered.head;
             await setCachedHtml(options.cacheDir, cacheKey, rendered.fullHtml ?? "", ttl);
           }
         } else {
@@ -142,13 +152,22 @@ export async function createSsrServer(options: SsrServerOptions): Promise<SsrSer
           });
           body = rendered.body;
           title = rendered.title;
+          lastRenderedCookie = rendered.clearActionErrorCookie;
+          lastRenderedHead = rendered.head;
         }
 
         if (wantsJson) {
-          res.writeHead(200, { "Content-Type": "application/json; charset=utf-8" });
-          res.end(JSON.stringify({ title, body }));
+          const headers: Record<string, string> = { "Content-Type": "application/json; charset=utf-8" };
+          // The SPA router applies the cookie via document.cookie so the next
+          // full reload does not re-feed stale errors to the page.
+          const setCookie = lastRenderedCookie;
+          if (setCookie) headers["X-Nix-Action-Clear-Cookie"] = setCookie;
+          res.writeHead(200, headers);
+          res.end(JSON.stringify({ title, body, head: lastRenderedHead, clearActionErrorCookie: setCookie }));
         } else {
-          res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+          const headers: Record<string, string> = { "Content-Type": "text/html; charset=utf-8" };
+          if (lastRenderedCookie) headers["Set-Cookie"] = lastRenderedCookie;
+          res.writeHead(200, headers);
           res.end(body);
         }
       } catch (err) {
@@ -163,6 +182,23 @@ export async function createSsrServer(options: SsrServerOptions): Promise<SsrSer
         res.end("Internal Server Error");
       }
       return;
+    }
+
+    // Run middleware before routing (skip for internal endpoints handled above).
+    if (middleware && matchesMiddleware(urlPath, middleware.config)) {
+      const headers = new Headers();
+      const cookie = req.headers["cookie"];
+      if (cookie) headers.set("Cookie", cookie);
+      const mwRequest = new Request(`http://${req.headers.host ?? "localhost"}${req.url}`, {
+        method: req.method,
+        headers,
+      });
+      const mwResult = await runMiddleware(middleware, mwRequest);
+      if (mwResult.kind === "response") {
+        res.writeHead(mwResult.response.status, Object.fromEntries(mwResult.response.headers.entries()));
+        res.end(Buffer.from(await mwResult.response.arrayBuffer()));
+        return;
+      }
     }
 
     // Try API routes first.
@@ -231,6 +267,7 @@ export async function createSsrServer(options: SsrServerOptions): Promise<SsrSer
         });
 
         let html: string;
+        let clearActionErrorCookie: string | undefined;
         const revalidate = match.route.dataPath
           ? ((await import(match.route.dataPath)) as { revalidate?: number }).revalidate
           : undefined;
@@ -259,19 +296,24 @@ export async function createSsrServer(options: SsrServerOptions): Promise<SsrSer
               request,
             });
             html = result.html;
+            clearActionErrorCookie = result.clearActionErrorCookie;
             await setCachedHtml(options.cacheDir, urlPath, html, ttl);
           }
         } else {
-          html = (await renderPage({
+          const result = await renderPage({
             route: match.route,
             params: match.params,
             searchParams: new URLSearchParams(req.url?.split("?")[1] ?? ""),
             config,
             actions: publicActions,
             request,
-          })).html;
+          });
+          html = result.html;
+          clearActionErrorCookie = result.clearActionErrorCookie;
         }
-        res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+        const responseHeaders: Record<string, string> = { "Content-Type": "text/html; charset=utf-8" };
+        if (clearActionErrorCookie) responseHeaders["Set-Cookie"] = clearActionErrorCookie;
+        res.writeHead(200, responseHeaders);
         res.end(html);
         return;
       } catch (err) {

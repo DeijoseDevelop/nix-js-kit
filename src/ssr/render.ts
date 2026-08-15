@@ -1,10 +1,11 @@
 import type { NixTemplate } from "@deijose/nix-js";
 import { renderToString } from "../render/render-to-string.js";
-import { documentShell } from "../build/document-shell.js";
+import { documentShell, buildHeadTags } from "../build/document-shell.js";
 import type { PageRoute, ScannedRoutes } from "../router/route-scanner.js";
 import type { BuildConfig } from "../build/build.js";
-import type { PageDataLoad, PageProps, RouteParams } from "../types.js";
+import type { PageDataLoad, PageProps, RouteParams, PageMetadata, GenerateMetadata } from "../types.js";
 import { existsSync } from "node:fs";
+import { decodeActionErrorCookie, ACTION_ERROR_COOKIE } from "../action/error-store.js";
 
 export interface RenderPageOptions {
   route: PageRoute;
@@ -22,6 +23,16 @@ export interface RenderPageOptions {
 export interface RenderPageResult {
   html: string;
   revalidate?: number;
+  /**
+   * `Set-Cookie` header value that clears the action error cookie, when the
+   * page consumed a relayed action failure. The SSR server should append it to
+   * the outgoing response so the cookie does not persist.
+   */
+  clearActionErrorCookie?: string;
+  /** `<head>` tags (title, meta, OG, twitter) for the SPA router to merge. */
+  head?: string;
+  /** Resolved page title (from metadata or fallback). */
+  resolvedTitle?: string;
 }
 
 const defaultImport = (path: string) => import(path);
@@ -51,9 +62,11 @@ export function collectShellExtras(
 export async function renderPage(options: RenderPageOptions): Promise<RenderPageResult> {
   const { route, params = {}, searchParams = new URLSearchParams(), config, importer = defaultImport, actions, request } = options;
 
-  const { default: PageComponent } = await importer(route.pagePath) as {
+  const pageModule = await importer(route.pagePath) as {
     default: (props: PageProps<unknown>) => NixTemplate;
+    generateMetadata?: GenerateMetadata;
   };
+  const { default: PageComponent, generateMetadata } = pageModule;
 
   let data: unknown;
   let revalidate: number | undefined;
@@ -67,10 +80,28 @@ export async function renderPage(options: RenderPageOptions): Promise<RenderPage
     }
   }
 
+  // Relay an action failure previously stored in the ephemeral cookie so the
+  // page can render validation errors via `props.form`. The cookie is cleared
+  // on the outgoing response (see `clearActionErrorCookie` in the result).
+  let form: unknown;
+  let clearActionErrorCookie: string | undefined;
+  if (request) {
+    const cookieHeader = request.headers.get("Cookie") ?? "";
+    const match = cookieHeader.match(new RegExp(`(?:^|;\\s*)${ACTION_ERROR_COOKIE}=([^;]+)`));
+    if (match) {
+      const decoded = decodeActionErrorCookie(match[1]);
+      if (decoded) {
+        form = { __nix_js_action_error: true, status: decoded.status, data: decoded.data };
+        clearActionErrorCookie = `${ACTION_ERROR_COOKIE}=; Path=/; Max-Age=0; SameSite=Lax`;
+      }
+    }
+  }
+
   const props: PageProps<unknown> = {
     data: data ?? {},
     params,
     searchParams,
+    form,
   };
 
   const layoutModules = await Promise.all(
@@ -105,18 +136,50 @@ export async function renderPage(options: RenderPageOptions): Promise<RenderPage
 
   const { htmlAttributes, headScripts } = collectShellExtras(data, layoutDataList);
 
+  // Resolve page metadata. Priority: `generateMetadata` from page.ts > `metadata`
+  // field in the page loader data > `metadata` field in layout loader data.
+  let metadata: PageMetadata | undefined;
+  if (typeof generateMetadata === "function") {
+    metadata = await generateMetadata({ params, searchParams, request, data });
+  }
+  if (!metadata) {
+    metadata = extractMetadata(data) ?? extractMetadataFromList(layoutDataList);
+  }
+  // The title from metadata takes precedence over the data.title fallback.
+  const resolvedTitle = metadata?.title ?? title;
+
   const html = documentShell({
-    title,
+    title: resolvedTitle,
     lang: config.lang,
     body,
     data,
     actions,
     htmlAttributes,
     headScripts,
+    metadata,
     clientEntry: config.clientEntry,
   });
 
-  return { html, revalidate };
+  const head = metadata ? buildHeadTags(metadata, resolvedTitle) : "";
+  return { html, revalidate, clearActionErrorCookie, head, resolvedTitle };
+}
+
+/** Extracts a `metadata` field from a loader data object, if present. */
+function extractMetadata(value: unknown): PageMetadata | undefined {
+  if (value && typeof value === "object" && "metadata" in value) {
+    const meta = (value as { metadata?: unknown }).metadata;
+    if (meta && typeof meta === "object") return meta as PageMetadata;
+  }
+  return undefined;
+}
+
+/** Extracts metadata from the first layout data object that has one. */
+function extractMetadataFromList(list: unknown[]): PageMetadata | undefined {
+  for (const item of list) {
+    const meta = extractMetadata(item);
+    if (meta) return meta;
+  }
+  return undefined;
 }
 
 export interface RenderErrorPageOptions {

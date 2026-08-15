@@ -7,6 +7,8 @@
 // and the client entry — are injected here at build time.
 // =============================================================================
 
+import type { PageMetadata } from "../types.js";
+
 export interface ShellOptions {
   /** Rendered inner HTML that goes inside `#app`. */
   body: string;
@@ -29,6 +31,8 @@ export interface ShellOptions {
   actions?: Record<string, string[]>;
   /** Path to the client entry module, e.g. `/_nix-js/entry-client.js`. */
   clientEntry?: string;
+  /** Page metadata emitted as `<meta>`, `<link>` and OG/Twitter tags in `<head>`. */
+  metadata?: PageMetadata;
 }
 
 const HTML_ESCAPES: Record<string, string> = {
@@ -51,9 +55,67 @@ function serializeData(data: unknown): string {
   return JSON.stringify(data ?? null).replace(/</g, "\\u003c");
 }
 
+/**
+ * Builds the `<head>` tags for a `PageMetadata` object. Every tag is marked with
+ * `data-nix-js-head` so the client-side router can replace them on navigation
+ * without touching charset/viewport or user-supplied `headScripts`.
+ */
+export function buildHeadTags(metadata: PageMetadata, fallbackTitle: string): string {
+  const tags: string[] = [];
+  const title = metadata.title ?? fallbackTitle;
+  if (metadata.title) {
+    tags.push(`<title data-nix-js-head>${escapeHtml(title)}</title>`);
+  }
+
+  if (metadata.description) {
+    tags.push(`<meta data-nix-js-head name="description" content="${escapeHtml(metadata.description)}" />`);
+  }
+
+  if (metadata.canonical) {
+    tags.push(`<link data-nix-js-head rel="canonical" href="${escapeHtml(metadata.canonical)}" />`);
+  }
+
+  if (metadata.robots) {
+    tags.push(`<meta data-nix-js-head name="robots" content="${escapeHtml(metadata.robots)}" />`);
+  }
+
+  const og = metadata.openGraph;
+  if (og) {
+    if (og.type) tags.push(`<meta data-nix-js-head property="og:type" content="${escapeHtml(og.type)}" />`);
+    tags.push(`<meta data-nix-js-head property="og:title" content="${escapeHtml(og.title ?? title)}" />`);
+    if (og.description ?? metadata.description) {
+      tags.push(`<meta data-nix-js-head property="og:description" content="${escapeHtml(og.description ?? metadata.description!)}" />`);
+    }
+    if (og.url ?? metadata.canonical) {
+      tags.push(`<meta data-nix-js-head property="og:url" content="${escapeHtml(og.url ?? metadata.canonical!)}" />`);
+    }
+    if (og.image) tags.push(`<meta data-nix-js-head property="og:image" content="${escapeHtml(og.image)}" />`);
+    if (og.siteName) tags.push(`<meta data-nix-js-head property="og:site_name" content="${escapeHtml(og.siteName)}" />`);
+    if (og.locale) tags.push(`<meta data-nix-js-head property="og:locale" content="${escapeHtml(og.locale)}" />`);
+  }
+
+  const tw = metadata.twitter;
+  if (tw) {
+    if (tw.card) tags.push(`<meta data-nix-js-head name="twitter:card" content="${escapeHtml(tw.card)}" />`);
+    if (tw.title ?? title) tags.push(`<meta data-nix-js-head name="twitter:title" content="${escapeHtml(tw.title ?? title)}" />`);
+    if (tw.description ?? metadata.description) {
+      tags.push(`<meta data-nix-js-head name="twitter:description" content="${escapeHtml(tw.description ?? metadata.description!)}" />`);
+    }
+    if (tw.image) tags.push(`<meta data-nix-js-head name="twitter:image" content="${escapeHtml(tw.image)}" />`);
+  }
+
+  if (metadata.other) {
+    for (const [name, content] of Object.entries(metadata.other)) {
+      tags.push(`<meta data-nix-js-head name="${escapeHtml(name)}" content="${escapeHtml(content)}" />`);
+    }
+  }
+
+  return tags.map((t) => `\n    ${t}`).join("");
+}
+
 /** Wraps rendered body HTML into a full HTML document. */
 export function documentShell(opts: ShellOptions): string {
-  const { body, title = "Nix.js Kit App", lang = "es", data, actions, clientEntry, htmlAttributes, headScripts } = opts;
+  const { body, title = "Nix.js Kit App", lang = "es", data, actions, clientEntry, htmlAttributes, headScripts, metadata } = opts;
 
   const dataScript =
     data !== undefined
@@ -70,24 +132,28 @@ export function documentShell(opts: ShellOptions): string {
 
   const htmlAttrs = htmlAttributes
     ? Object.entries(htmlAttributes)
-        .filter(([, value]) => value !== undefined && value !== null && value !== "")
-        .map(([key, value]) => ` ${escapeHtml(key)}="${escapeHtml(String(value))}"`)
-        .join("")
+      .filter(([, value]) => value !== undefined && value !== null && value !== "")
+      .map(([key, value]) => ` ${escapeHtml(key)}="${escapeHtml(String(value))}"`)
+      .join("")
     : "";
 
   const headScriptsHtml = headScripts
     ? headScripts
-        .filter((script) => typeof script === "string" && script.trim().length > 0)
-        .map((script) => `\n    <script>${script.replace(/<\/script>/gi, "<\\/script>")}</script>`)
-        .join("")
+      .filter((script) => typeof script === "string" && script.trim().length > 0)
+      .map((script) => `\n    <script>${script.replace(/<\/script>/gi, "<\\/script>")}</script>`)
+      .join("")
     : "";
+
+  const headTags = metadata ? buildHeadTags(metadata, title) : "";
+  const titleTag = metadata?.title
+    ? "" // already emitted by buildHeadTags
+    : `\n    <title>${escapeHtml(title)}</title>`;
 
   return `<!DOCTYPE html>
 <html lang="${escapeHtml(lang)}"${htmlAttrs}>
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>${escapeHtml(title)}</title>${headScriptsHtml}
+    <meta name="viewport" content="width=device-width, initial-scale=1" />${titleTag}${headTags}${headScriptsHtml}
   </head>
   <body>
     <div id="app">${body}</div>${dataScript}${actionsScript}${entryScript}

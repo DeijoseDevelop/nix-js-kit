@@ -123,7 +123,7 @@ Options:
 | `--hydrate-import <spec>` | `@deijose/nix-js-kit/island` | Import path for `hydrateIslands` in generated entry |
 | `--client-config <path>` | `vite.client.config.ts` (auto-detected) | Vite config used to build the client bundle in dev mode |
 
-## Core features (v1.2)
+## Core features (v1.3)
 
 - **Static site generation (SSG)** from `src/app/` file conventions.
 - **File-based route scanner** — maps `page.ts` files to URLs.
@@ -147,6 +147,23 @@ Options:
 - **Auto island scan** — `build()` scans `src/islands/` and generates the client hydration entry for you.
 - **Document shell** with serialized loader data (`<script id="nix-js-data">`).
 - **CLI** (`nix-js-kit build` / `nix-js-kit dev` / `nix-js-kit preview` / `nix-js-kit start`).
+- **Metadata API** — `generateMetadata()` or loader `metadata` field with OpenGraph, Twitter cards, canonical, robots. Head tags merge on SPA navigation.
+- **Content layer** — typed Markdown collections with YAML frontmatter, `zod` schema validation, and `marked` rendering (`@deijose/nix-js-kit/content`).
+- **Image optimization** — responsive `image()` helper with `srcset`/`sizes`/`fetchpriority`; build-time WebP/AVIF variants via `sharp` (`@deijose/nix-js-kit/image`).
+- **Link prefetch** — viewport and hover prefetch with 30s TTL cache.
+- **View Transitions** — native `document.startViewTransition()` with `prefers-reduced-motion` respect.
+- **Middleware** — `src/middleware.ts` with path matchers, redirects, and header injection.
+- **CSRF protection** — Origin/Referer verification for server actions.
+
+## What's new in v1.3
+
+- **Security** — CSRF protection via Origin header verification; action errors stored in ephemeral cookies instead of URL params.
+- **Metadata API** — `generateMetadata()` in pages, head merge on SPA navigation, scroll restoration on back/forward.
+- **Content layer** — typed Markdown collections with YAML frontmatter parser (zero deps), optional `zod` validation, `marked` rendering, `raw()` HTML helper, HMR for `.md` files.
+- **Image optimization** — `image()` with responsive srcset/sizes/lazy/fetchpriority; `sharp` pipeline generates WebP/AVIF variants at build time.
+- **Prefetch + View Transitions** — IntersectionObserver-based prefetch on viewport + hover/focus; native View Transitions API with reduced-motion fallback.
+- **Middleware** — `src/middleware.ts` with `config.matcher`, runs before routing in SSR and Vite dev server.
+- **TypeScript 7** — upgraded to the native Go compiler (10x faster typecheck).
 
 ## What's new in v1.2
 
@@ -172,6 +189,7 @@ Options:
 | v1.0 | Stabilization: test suite, error handling ✅, Node adapter ✅, and action DX ✅ |
 | v1.1 | Streaming boundaries + ISR ✅ |
 | v1.2 | Interpolation plugin, SPA router, preview SSR fallback ✅ |
+| v1.3 | Security, metadata API, content layer, image optimization, prefetch, View Transitions, middleware ✅ |
 
 ## API
 
@@ -697,25 +715,165 @@ const islands = await scanIslands("./src/islands");
 await generateClientEntry({ islands, outFile: "./.nix-js/entry-client.ts" });
 ```
 
+### Metadata API
+
+Pages can export a `generateMetadata` function or return a `metadata` field
+from loaders. The framework generates `<title>`, `<meta>`, `<link>`, OpenGraph
+and Twitter card tags, all marked with `data-nix-js-head` so the SPA router
+can swap them on navigation.
+
+```ts
+// src/app/blog/[slug]/page.ts
+import type { PageMetadata } from "@deijose/nix-js-kit";
+
+export const generateMetadata = async ({ params }): Promise<PageMetadata> => {
+  return {
+    title: `Blog: ${params.slug}`,
+    description: "A blog post",
+    canonical: `https://example.com/blog/${params.slug}`,
+    openGraph: { type: "article", image: "/og/blog.jpg" },
+    twitter: { card: "summary_large_image" },
+  };
+};
+```
+
+You can also return `metadata` from a loader:
+
+```ts
+// src/app/page.data.ts
+export const load = async () => {
+  return { title: "Home", metadata: { title: "My Site — Home" } };
+};
+```
+
+### Content layer
+
+Typed Markdown collections with YAML frontmatter. Define collections in
+`src/content/config.ts` and query them from loaders:
+
+```ts
+// src/content/config.ts
+import { defineCollection } from "@deijose/nix-js-kit/content";
+
+export const collections = {
+  blog: defineCollection({ /* schema: z.object({ title: z.string() }) */ }),
+};
+```
+
+```ts
+// src/app/blog/[slug]/page.data.ts
+import { getEntry } from "@deijose/nix-js-kit/content";
+
+export const load = async ({ params }) => {
+  const post = await getEntry("blog", params.slug);
+  if (!post) throw new Response("Not Found", { status: 404 });
+  return { post };
+};
+```
+
+```ts
+// src/app/blog/[slug]/page.ts
+import { raw } from "@deijose/nix-js-kit/content";
+import { renderEntryHTML } from "@deijose/nix-js-kit/content";
+
+export default function BlogPost({ data }) {
+  return html`
+    <article>
+      <h1>${data.post.data.title}</h1>
+      ${raw(await renderEntryHTML(data.post))}
+    </article>
+  `;
+}
+```
+
+Optional peer dependencies:
+- `marked` — Markdown rendering (`renderMarkdown`, `renderEntryHTML`)
+- `zod` — schema validation (`defineCollection({ schema: z.object(...) })`)
+
+### Image optimization
+
+The `image()` helper emits responsive `<img>` tags with `srcset`, `sizes`,
+lazy loading, and CLS-preventing `width`/`height`:
+
+```ts
+import { image } from "@deijose/nix-js-kit";
+
+export default function HeroPage() {
+  return html`
+    ${image({
+      src: "/images/hero.jpg",
+      alt: "Hero image",
+      width: 1920,
+      height: 1080,
+      widths: [640, 1280, 1920],
+      sizes: "100vw",
+      priority: true, // above-the-fold: eager load, fetchpriority="high"
+    })}
+  `;
+}
+```
+
+When `sharp` is installed (optional peer dep), `build()` automatically
+generates WebP and AVIF variants at the requested widths with content-based
+hashing for indefinite caching.
+
+### Middleware
+
+Create `src/middleware.ts` to run logic before every request (auth, redirects,
+header injection):
+
+```ts
+import type { Middleware } from "@deijose/nix-js-kit";
+
+const middleware: Middleware = (request) => {
+  if (!request.headers.get("Cookie")?.includes("session=")) {
+    return Response.redirect(new URL("/login", request.url), 307);
+  }
+};
+
+export default middleware;
+
+export const config = {
+  matcher: ["/dashboard/:path*", "/admin/:path*"],
+};
+```
+
+### Prefetch and View Transitions
+
+The SPA router automatically prefetches pages when links enter the viewport
+(IntersectionObserver) and on hover/focus. Prefetched pages are cached for
+30 seconds. Add `data-no-prefetch` to any link to opt out.
+
+When the browser supports the View Transitions API, page transitions use
+`document.startViewTransition()` for smooth cross-fade animations. This is
+automatically disabled when the user has `prefers-reduced-motion: reduce`.
+
 ## Project conventions
 
 ```text
 my-app/
 ├── src/
-│   └── app/
-│       ├── layout.ts        # root layout
-│       ├── page.ts          # home page
-│       ├── page.data.ts     # home loader
-│       ├── page.action.ts   # home server actions
-│       ├── 404.page.ts      # custom 404 page
-│       ├── 500.page.ts      # custom 500 page
-│       ├── blog/
-│       │   ├── page.ts
-│       │   ├── page.data.ts
-│       │   └── page.action.ts
-│       └── api/
-│           └── posts/
-│               └── route.ts # API endpoint
+│   ├── app/
+│   │   ├── layout.ts        # root layout
+│   │   ├── page.ts          # home page
+│   │   ├── page.data.ts     # home loader
+│   │   ├── page.action.ts   # home server actions
+│   │   ├── 404.page.ts      # custom 404 page
+│   │   ├── 500.page.ts      # custom 500 page
+│   │   ├── blog/
+│   │   │   ├── page.ts
+│   │   │   ├── page.data.ts
+│   │   │   └── page.action.ts
+│   │   └── api/
+│   │       └── posts/
+│   │           └── route.ts # API endpoint
+│   ├── content/             # content layer (Markdown collections)
+│   │   ├── config.ts        # collection definitions
+│   │   └── blog/
+│   │       ├── hello-world.md
+│   │       └── second-post.md
+│   └── islands/             # interactive components
+├── middleware.ts            # optional middleware (auth, redirects)
 ├── nix.config.ts
 └── vite.config.ts
 ```

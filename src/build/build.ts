@@ -5,6 +5,8 @@ import { scanIslands, type IslandModule } from "../island/scan.js";
 import { generateClientEntry } from "../island/generate-entry.js";
 import { renderPage, renderErrorPage } from "../ssr/render.js";
 import { scanActions, actionNames } from "../action/scan.js";
+import { consumeImageRegistry, type ImageFormat } from "../image/index.js";
+import { processImages } from "../image/pipeline.js";
 import type { RouteParams, GenerateStaticParams } from "../types.js";
 
 // =============================================================================
@@ -51,6 +53,10 @@ export interface BuildConfig {
    * Defaults to the published subpath `@deijose/nix-js-kit/router`.
    */
   routerImport?: string;
+  /** Absolute path to the public directory for static assets (optional). */
+  publicDir?: string;
+  /** Image formats to generate when sharp is available. Defaults to ["webp", "avif"]. */
+  imageFormats?: ImageFormat[];
 }
 
 export interface BuildResult {
@@ -64,6 +70,8 @@ export interface BuildResult {
   islands: IslandModule[];
   /** Absolute path to the generated client entry, if one was written. */
   generatedEntry?: string;
+  /** Number of image variants generated (0 if sharp is not installed). */
+  imagesProcessed: number;
 }
 
 function urlToFilePath(outDir: string, urlPath: string): string {
@@ -105,7 +113,7 @@ export async function build(config: BuildConfig): Promise<BuildResult> {
   const actions = await scanActions(config.appDir);
   // Only action names are serialized into the HTML shell; full paths stay on the server.
   const publicActions = actionNames(actions);
-  const result: BuildResult = { pages: 0, skipped: [], files: [], islands: [] };
+  const result: BuildResult = { pages: 0, skipped: [], files: [], islands: [], imagesProcessed: 0 };
 
   // Scan islands and generate the client entry before rendering pages, so the
   // hydration bundle stays in sync with what the app actually uses.
@@ -169,6 +177,17 @@ export async function build(config: BuildConfig): Promise<BuildResult> {
       await writeFile(filePath, result500.html, "utf8");
       result.files.push(filePath);
     }
+  }
+
+  // Process registered images with sharp (if installed).
+  const registeredImages = consumeImageRegistry();
+  if (registeredImages.length > 0 && config.publicDir) {
+    const processed = await processImages(registeredImages, {
+      publicDir: config.publicDir,
+      outDir: config.outDir,
+      formats: config.imageFormats,
+    });
+    result.imagesProcessed = processed.reduce((sum, p) => sum + p.variants.length, 0);
   }
 
   return result;

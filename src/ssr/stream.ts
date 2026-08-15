@@ -122,6 +122,10 @@ export interface RenderPageBodyResult {
   title: string;
   /** Full rendered document shell (used for ISR caching). */
   fullHtml?: string;
+  /** `Set-Cookie` value that clears a consumed action error cookie. */
+  clearActionErrorCookie?: string;
+  /** `<head>` tags (title, meta, OG, twitter) for the SPA router to merge. */
+  head?: string;
 }
 
 /** Thrown by `renderPageBody` when the requested path has no matching route. */
@@ -155,10 +159,12 @@ export async function renderPageBody(options: RenderPageBodyOptions): Promise<Re
 
   const bodyMatch = result.html.match(/<div id="app">([\s\S]*)<\/div>\s*(<script|$)/);
   const body = bodyMatch ? bodyMatch[1].trim() : result.html;
-  const titleMatch = result.html.match(/<title>([^<]*)<\/title>/);
+  const titleMatch = result.html.match(/<title[^>]*>([^<]*)<\/title>/);
   return {
     body,
-    title: titleMatch ? titleMatch[1] : "",
+    title: titleMatch ? titleMatch[1] : result.resolvedTitle ?? "",
     fullHtml: result.html,
+    clearActionErrorCookie: result.clearActionErrorCookie,
+    head: result.head,
   };
 }

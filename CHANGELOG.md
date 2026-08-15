@@ -2,6 +2,43 @@
 
 All notable changes to `@deijose/nix-js-kit` will be documented in this file.
 
+## 1.3.0
+
+### Added
+
+- **CSRF protection for server actions** — `verifyOrigin()` checks the `Origin`/`Referer` header against the `Host` header with optional `allowedOrigins` and `strictOrigin` mode. Configured via `actionSecurity` in the Vite plugin and SSR server options.
+- **Action error cookie store** — action failure data is now stored in an ephemeral `__nix_js_action_error` cookie (SameSite=Lax, Max-Age=15s) instead of URL query parameters, improving security and privacy. `props.form` is populated from the cookie and cleared on the next response.
+- **Metadata API** — pages can export `generateMetadata(context)` or return a `metadata` field from loaders/layouts. Supports `title`, `description`, `canonical`, `openGraph`, `twitter`, `robots`, and `other` fields. Head tags are marked with `data-nix-js-head` for SPA head merge.
+- **Head merge in SPA router** — the client router swaps `<head>` tags marked with `data-nix-js-head` on every navigation, keeping metadata in sync with the current page.
+- **Scroll restoration** — the client router saves and restores scroll position per path on `popstate`, so back/forward navigation feels native.
+- **Content layer** (`@deijose/nix-js-kit/content`) — typed Markdown collections with YAML frontmatter:
+  - `defineCollection({ schema })` for typed frontmatter validation (optional `zod` peer dep).
+  - `getCollection(name)`, `getEntry(collection, slug)`, `getEntries(collection, slugs)` for querying content.
+  - `renderEntryHTML(entry)` renders Markdown to HTML via `marked` (optional peer dep).
+  - Built-in YAML frontmatter parser (strings, numbers, booleans, dates, inline/block arrays) — zero dependencies.
+  - `raw(html)` helper for injecting trusted HTML without escaping (e.g. rendered Markdown).
+  - HMR for `.md` files in the Vite dev server.
+  - `src/content/config.ts` convention for collection definitions.
+- **Image optimization** (`@deijose/nix-js-kit/image`):
+  - `image()` helper emits responsive `<img>` with `srcset`, `sizes`, `loading="lazy"`, `decoding="async"`, `fetchpriority`, and `width`/`height` to prevent CLS.
+  - Build-time pipeline with `sharp` (optional peer dep) generates WebP/AVIF variants at multiple widths with content-based hashing.
+  - `processImages()` API for programmatic access; integrated into `build()` via `consumeImageRegistry()`.
+  - `BuildConfig.publicDir` and `BuildConfig.imageFormats` options; `BuildResult.imagesProcessed` reports variant count.
+- **Link prefetch** — the client router prefetches pages on viewport intersection (IntersectionObserver) and on hover/focus, with a 30s TTL cache. Respects `data-no-prefetch` attribute on individual links.
+- **View Transitions API** — the client router uses `document.startViewTransition()` for smooth page transitions when available, with automatic `prefers-reduced-motion` respect.
+- **Middleware** — `src/middleware.ts` convention with `config.matcher` for path filtering. Supports `:param` and `:param*` patterns. Return a `Response` to short-circuit (redirect, 401, etc.) or call `next()` to continue. Integrated into SSR server and Vite plugin.
+- **Stream boundary** (experimental) — `streamBoundary()` wraps a promise with a loading fallback for out-of-order streaming during SSR.
+
+### Changed
+
+- Action error data moved from URL query params to ephemeral cookies (`__nix_js_action_error`) for security and privacy.
+- Head tags use `data-nix-js-head` attribute (was `data-nix-head` internally) for consistent `nix-js` naming.
+- `BuildResult` now includes `imagesProcessed` count.
+- `SsrServerOptions` includes `actionSecurity` for CSRF configuration.
+- `NixJsKitViteOptions` includes `actionSecurity`, `contentDir` for content layer root.
+- TypeScript upgraded to 7.0.2 (native Go compiler, 10x faster builds). `baseUrl` removed from `tsconfig.json` (deprecated in TS 7); `paths` now resolve relative to the config file.
+- `marked`, `zod`, and `sharp` added as optional peer dependencies via `peerDependenciesMeta`.
+
 ## 1.2.7
 
 ### Changed

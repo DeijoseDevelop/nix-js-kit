@@ -3,11 +3,13 @@ import { dirname, relative, resolve } from "node:path";
 import type { Plugin, Connect, ViteDevServer } from "vite";
 import { scanRoutes } from "../router/route-scanner.js";
 import { scanActions, actionNames, type ActionRegistry } from "../action/scan.js";
-import { handleActionRequest } from "../action/server.js";
+import { handleActionRequest, type ActionSecurityOptions } from "../action/server.js";
 import { scanIslands } from "../island/scan.js";
 import { buildEntrySource } from "../island/generate-entry.js";
 import { matchApiRoute, matchRoute } from "../ssr/match.js";
 import { renderPage, renderErrorPage } from "../ssr/render.js";
+import { setContentRoot, clearContentCache } from "../content/collections.js";
+import { loadMiddleware, matchesMiddleware, runMiddleware, type LoadedMiddleware } from "../middleware/index.js";
 import { nixJsInterpolationPlugin } from "./interpolation-plugin.js";
 
 export interface NixJsKitViteOptions {
@@ -15,6 +17,8 @@ export interface NixJsKitViteOptions {
   appDir?: string;
   /** Islands directory relative to Vite root (default: src/islands). */
   islandsDir?: string;
+  /** Content directory relative to Vite root (default: src/content). */
+  contentDir?: string;
   /** Where to write the generated client entry (default: .nix-js/entry-client.ts). */
   generatedEntry?: string;
   /** Public path for the client entry module (default: /_nix-js/entry-client.js). */
@@ -25,6 +29,8 @@ export interface NixJsKitViteOptions {
   hydrateImport?: string;
   /** Import specifier for startClientRouter in the generated entry. */
   routerImport?: string;
+  /** CSRF / origin policy applied to the server actions endpoint in dev. */
+  actionSecurity?: ActionSecurityOptions;
 }
 
 /**
@@ -37,6 +43,7 @@ export interface NixJsKitViteOptions {
 export function nixJsKit(options: NixJsKitViteOptions = {}): Plugin[] {
   const appDir = options.appDir ?? "src/app";
   const islandsDir = options.islandsDir ?? "src/islands";
+  const contentDir = options.contentDir ?? "src/content";
   const generatedEntry = options.generatedEntry ?? ".nix-js/entry-client.ts";
   const clientEntry = options.clientEntry ?? "/_nix-js/entry-client.js";
   const lang = options.lang ?? "es";
@@ -46,6 +53,7 @@ export function nixJsKit(options: NixJsKitViteOptions = {}): Plugin[] {
   let routes: Awaited<ReturnType<typeof scanRoutes>> | null = null;
   let actions: ActionRegistry = {};
   let root: string = ".";
+  let middleware: LoadedMiddleware | null = null;
 
   const mainPlugin: Plugin = {
     name: "nix-js-kit",
@@ -62,6 +70,13 @@ export function nixJsKit(options: NixJsKitViteOptions = {}): Plugin[] {
       const appDirPath = resolve(root, appDir);
       routes = await scanRoutes(appDirPath);
       actions = await scanActions(appDirPath);
+
+      // Wire up the content layer root so getCollection/getEntry resolve
+      // from the user's src/content directory.
+      setContentRoot(resolve(root, contentDir));
+
+      // Load user middleware (src/middleware.ts) if it exists.
+      middleware = await loadMiddleware(root);
     },
 
     configureServer(server) {
@@ -70,9 +85,11 @@ export function nixJsKit(options: NixJsKitViteOptions = {}): Plugin[] {
 
       const appDirPath = resolve(root, appDir);
       const islandsDirPath = resolve(root, islandsDir);
-      setupHmr(server, appDirPath, islandsDirPath, root, generatedEntry, hydrateImport, routerImport, () => {
+      const contentDirPath = resolve(root, contentDir);
+      setupHmr(server, appDirPath, islandsDirPath, contentDirPath, root, generatedEntry, hydrateImport, routerImport, () => {
         routes = null;
         actions = {};
+        clearContentCache();
       });
 
       server.middlewares.use(async (req, res, next) => {
@@ -94,7 +111,7 @@ export function nixJsKit(options: NixJsKitViteOptions = {}): Plugin[] {
               headers,
               body,
             });
-            const response = await handleActionRequest(request, resolveAction);
+            const response = await handleActionRequest(request, resolveAction, options.actionSecurity);
             res.writeHead(response.status, Object.fromEntries(response.headers.entries()));
             res.end(await response.text());
           } catch (err) {
@@ -130,7 +147,7 @@ export function nixJsKit(options: NixJsKitViteOptions = {}): Plugin[] {
             const page = renderUrl.searchParams.get("page") ?? "/";
             const search = renderUrl.searchParams.get("search") ?? "";
             const wantsJson = (req.headers["accept"] ?? "").includes("application/json");
-            const { body, title } = await renderPageBody({
+            const { body, title, head, clearActionErrorCookie } = await renderPageBody({
               routes: currentRoutes,
               pathname: page,
               searchParams: new URLSearchParams(search),
@@ -139,10 +156,14 @@ export function nixJsKit(options: NixJsKitViteOptions = {}): Plugin[] {
               importer: ssrLoad,
             });
             if (wantsJson) {
-              res.writeHead(200, { "Content-Type": "application/json; charset=utf-8" });
-              res.end(JSON.stringify({ title, body }));
+              const headers: Record<string, string> = { "Content-Type": "application/json; charset=utf-8" };
+              if (clearActionErrorCookie) headers["X-Nix-Action-Clear-Cookie"] = clearActionErrorCookie;
+              res.writeHead(200, headers);
+              res.end(JSON.stringify({ title, body, head, clearActionErrorCookie }));
             } else {
-              res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+              const headers: Record<string, string> = { "Content-Type": "text/html; charset=utf-8" };
+              if (clearActionErrorCookie) headers["Set-Cookie"] = clearActionErrorCookie;
+              res.writeHead(200, headers);
               res.end(body);
             }
             return;
@@ -195,6 +216,23 @@ export function nixJsKit(options: NixJsKitViteOptions = {}): Plugin[] {
           }
         }
 
+        // Run middleware before SSR rendering.
+        if (middleware && matchesMiddleware(urlPath, middleware.config)) {
+          const mwHeaders = new Headers();
+          const cookie = req.headers["cookie"];
+          if (cookie) mwHeaders.set("Cookie", cookie);
+          const mwRequest = new Request(`http://${req.headers.host ?? "localhost"}${req.url}`, {
+            method: req.method,
+            headers: mwHeaders,
+          });
+          const mwResult = await runMiddleware(middleware, mwRequest);
+          if (mwResult.kind === "response") {
+            res.writeHead(mwResult.response.status, Object.fromEntries(mwResult.response.headers.entries()));
+            res.end(Buffer.from(await mwResult.response.arrayBuffer()));
+            return;
+          }
+        }
+
         const handled = await handleSsrRequest(req, res, next, {
           routes: currentRoutes,
           actions: currentActions,
@@ -216,6 +254,7 @@ function setupHmr(
   server: ViteDevServer,
   appDirPath: string,
   islandsDirPath: string,
+  contentDirPath: string,
   root: string,
   generatedEntry: string,
   hydrateImport: string,
@@ -223,7 +262,7 @@ function setupHmr(
   invalidate: () => void,
 ) {
   const isRelevant = (path: string) =>
-    path.startsWith(appDirPath) || path.startsWith(islandsDirPath);
+    path.startsWith(appDirPath) || path.startsWith(islandsDirPath) || path.startsWith(contentDirPath);
 
   async function regenerateIslandEntry() {
     const islands = await scanIslands(islandsDirPath);
@@ -243,6 +282,8 @@ function setupHmr(
     if (path.startsWith(islandsDirPath)) {
       await regenerateIslandEntry();
       console.log("[nix-js-kit] HMR reload islands after change:", path);
+    } else if (path.startsWith(contentDirPath) && path.endsWith(".md")) {
+      console.log("[nix-js-kit] HMR content changed:", path);
     } else if (path.includes(".action.ts") || path.includes(".data.ts") || path.includes("page.ts") || path.includes("layout.ts")) {
       console.log("[nix-js-kit] HMR reload routes/actions after change:", path);
     }
@@ -347,14 +388,14 @@ async function handleSsrRequest(
   const match = matchRoute(urlPath, options.routes.pages);
   if (match) {
     try {
-      const headers = new Headers();
+      const reqHeaders = new Headers();
       const cookie = req.headers["cookie"];
-      if (cookie) headers.set("Cookie", cookie);
+      if (cookie) reqHeaders.set("Cookie", cookie);
       const request = new Request(`http://${req.headers.host ?? "localhost"}${req.url}`, {
         method: req.method,
-        headers,
+        headers: reqHeaders,
       });
-      const { html } = await renderPage({
+      const { html, clearActionErrorCookie } = await renderPage({
         route: match.route,
         params: match.params,
         searchParams: new URLSearchParams(req.url?.split("?")[1] ?? ""),
@@ -363,10 +404,12 @@ async function handleSsrRequest(
         actions: publicActions,
         request,
       });
-      res.writeHead(200, {
+      const responseHeaders: Record<string, string> = {
         "Content-Type": "text/html; charset=utf-8",
         "Cache-Control": "no-store, must-revalidate",
-      });
+      };
+      if (clearActionErrorCookie) responseHeaders["Set-Cookie"] = clearActionErrorCookie;
+      res.writeHead(200, responseHeaders);
       res.end(html);
       return true;
     } catch (err) {
