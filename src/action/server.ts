@@ -66,11 +66,11 @@ async function parseActionRequest(request: Request): Promise<
     contentType.includes("multipart/form-data")
   ) {
     const form = await request.formData();
-    name = form.get("__nix_action_name") as string | null ?? undefined;
-    page = form.get("__nix_action_page") as string | null ?? undefined;
+    name = form.get("__nix_js_action_name") as string | null ?? undefined;
+    page = form.get("__nix_js_action_page") as string | null ?? undefined;
     const input: Record<string, unknown> = {};
     for (const [key, value] of form) {
-      if (key === "__nix_action_name" || key === "__nix_action_page") continue;
+      if (key === "__nix_js_action_name" || key === "__nix_js_action_page") continue;
       input[key] = value;
     }
     args = [input];
@@ -78,11 +78,11 @@ async function parseActionRequest(request: Request): Promise<
     // Try to parse a plain form body as a fallback for progressive enhancement.
     const text = await request.text();
     const form = parseFormBody(text);
-    name = form.__nix_action_name as string | undefined;
-    page = form.__nix_action_page as string | undefined;
+    name = form.__nix_js_action_name as string | undefined;
+    page = form.__nix_js_action_page as string | undefined;
     const input: Record<string, unknown> = {};
     for (const [key, value] of Object.entries(form)) {
-      if (key === "__nix_action_name" || key === "__nix_action_page") continue;
+      if (key === "__nix_js_action_name" || key === "__nix_js_action_page") continue;
       input[key] = value;
     }
     args = [input];
@@ -132,7 +132,7 @@ export async function handleActionRequest(
 
     if (isActionFailure(result)) {
       if (wantsJson) {
-        return new Response(JSON.stringify({ __nix_action_failure: true, status: result.status, data: result.data }), {
+        return new Response(JSON.stringify({ __nix_js_action_failure: true, status: result.status, data: result.data }), {
           status: result.status,
           headers: { "Content-Type": "application/json" },
         });
@@ -140,7 +140,7 @@ export async function handleActionRequest(
       // For progressive enhancement, redirect back with the failure data serialized in the URL.
       const referer = request.headers.get("Referer") ?? "/";
       const url = new URL(referer, "http://localhost");
-      url.searchParams.set("__nix_action_error", JSON.stringify(result.data));
+      url.searchParams.set("__nix_js_action_error", JSON.stringify(result.data));
       return new Response(null, {
         status: 303,
         headers: { Location: url.pathname + url.search, "Content-Type": "text/plain" },
@@ -150,7 +150,7 @@ export async function handleActionRequest(
     if (isRedirectResponse(result)) {
       if (wantsJson) {
         return new Response(
-          JSON.stringify({ __nix_action_redirect: true, status: result.status, location: result.location }),
+          JSON.stringify({ __nix_js_action_redirect: true, status: result.status, location: result.location }),
           {
             status: 200,
             headers: { "Content-Type": "application/json" },

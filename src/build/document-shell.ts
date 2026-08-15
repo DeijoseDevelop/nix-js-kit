@@ -53,7 +53,7 @@ function serializeData(data: unknown): string {
 
 /** Wraps rendered body HTML into a full HTML document. */
 export function documentShell(opts: ShellOptions): string {
-  const { body, title = "Nix Kit App", lang = "es", data, actions, clientEntry, htmlAttributes, headScripts } = opts;
+  const { body, title = "Nix.js Kit App", lang = "es", data, actions, clientEntry, htmlAttributes, headScripts } = opts;
 
   const dataScript =
     data !== undefined

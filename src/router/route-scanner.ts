@@ -185,7 +185,7 @@ async function scanRecursive(
 }
 
 /**
- * Scans an app directory for Nix Kit file-based routes.
+ * Scans an app directory for Nix.js Kit file-based routes.
  *
  * @param appDir Absolute path to the app directory (e.g. "src/app").
  * @returns Discovered page and API routes.

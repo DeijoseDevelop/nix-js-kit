@@ -69,8 +69,8 @@ describe("handleActionRequest", () => {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded", Referer: "http://localhost/" },
       body: new URLSearchParams({
-        __nix_action_name: "subscribe",
-        __nix_action_page: "/",
+        __nix_js_action_name: "subscribe",
+        __nix_js_action_page: "/",
         email: "ada@example.com",
       }).toString(),
     });
@@ -88,8 +88,8 @@ describe("handleActionRequest", () => {
     });
     const response = await handleActionRequest(request, async () => badAction);
     assert.equal(response.status, 400);
-    const body = (await response.json()) as { __nix_action_failure: boolean; status: number; data: unknown };
-    assert.equal(body.__nix_action_failure, true);
+    const body = (await response.json()) as { __nix_js_action_failure: boolean; status: number; data: unknown };
+    assert.equal(body.__nix_js_action_failure, true);
     assert.equal(body.status, 400);
     assert.deepEqual(body.data, { field: "email", message: "Invalid email" });
   });
@@ -99,12 +99,12 @@ describe("handleActionRequest", () => {
     const request = new Request("http://localhost/__nix-js/actions", {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded", Referer: "http://localhost/contact" },
-      body: new URLSearchParams({ __nix_action_name: "bad", __nix_action_page: "/" }).toString(),
+      body: new URLSearchParams({ __nix_js_action_name: "bad", __nix_js_action_page: "/" }).toString(),
     });
     const response = await handleActionRequest(request, async () => badAction);
     assert.equal(response.status, 303);
     const location = response.headers.get("Location");
-    assert.ok(location?.startsWith("/contact?__nix_action_error="), "should redirect back with error query");
+    assert.ok(location?.startsWith("/contact?__nix_js_action_error="), "should redirect back with error query");
   });
 
   it("returns a JSON redirect payload for JSON requests", async () => {
@@ -116,8 +116,8 @@ describe("handleActionRequest", () => {
     });
     const response = await handleActionRequest(request, async () => redirectAction);
     assert.equal(response.status, 200);
-    const body = (await response.json()) as { __nix_action_redirect: boolean; status: number; location: string };
-    assert.equal(body.__nix_action_redirect, true);
+    const body = (await response.json()) as { __nix_js_action_redirect: boolean; status: number; location: string };
+    assert.equal(body.__nix_js_action_redirect, true);
     assert.equal(body.status, 303);
     assert.equal(body.location, "/login");
   });
@@ -127,7 +127,7 @@ describe("handleActionRequest", () => {
     const request = new Request("http://localhost/__nix-js/actions", {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded", Referer: "http://localhost/" },
-      body: new URLSearchParams({ __nix_action_name: "redirect", __nix_action_page: "/" }).toString(),
+      body: new URLSearchParams({ __nix_js_action_name: "redirect", __nix_js_action_page: "/" }).toString(),
     });
     const response = await handleActionRequest(request, async () => redirectAction);
     assert.equal(response.status, 303);

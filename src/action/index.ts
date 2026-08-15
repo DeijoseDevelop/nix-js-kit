@@ -3,7 +3,7 @@
  *
  * Server actions are defined in `page.action.ts` files next to `page.ts`.
  * They export async functions that run on the server. On the client, call them
- * by name using `callAction` or the higher-level `nixAction` helper:
+ * by name using `callAction` or the higher-level `nixJsAction` helper:
  *
  * ```ts
  * import { callAction } from "@deijose/nix-js-kit/action";
@@ -12,9 +12,9 @@
  * ```
  *
  * ```ts
- * import { nixAction } from "@deijose/nix-js-kit/action";
+ * import { nixJsAction } from "@deijose/nix-js-kit/action";
  *
- * const contact = nixAction("submitContact", { page: "/contact" });
+ * const contact = nixJsAction("submitContact", { page: "/contact" });
  * await contact.submit({ name: "Ada" });
  * console.log(contact.data.value, contact.error.value, contact.pending.value);
  * ```
@@ -24,23 +24,23 @@ import { signal } from "@deijose/nix-js";
 import { ActionFailure, RedirectResponse } from "../errors.js";
 
 interface ActionFailurePayload {
-  __nix_action_failure?: boolean;
+  __nix_js_action_failure?: boolean;
   status?: number;
   data?: unknown;
 }
 
 interface RedirectPayload {
-  __nix_action_redirect?: boolean;
+  __nix_js_action_redirect?: boolean;
   status?: number;
   location?: string;
 }
 
-function isActionFailurePayload(value: unknown): value is ActionFailurePayload & { __nix_action_failure: true } {
-  return typeof value === "object" && value !== null && (value as Record<string, unknown>).__nix_action_failure === true;
+function isActionFailurePayload(value: unknown): value is ActionFailurePayload & { __nix_js_action_failure: true } {
+  return typeof value === "object" && value !== null && (value as Record<string, unknown>).__nix_js_action_failure === true;
 }
 
-function isRedirectPayload(value: unknown): value is RedirectPayload & { __nix_action_redirect: true } {
-  return typeof value === "object" && value !== null && (value as Record<string, unknown>).__nix_action_redirect === true;
+function isRedirectPayload(value: unknown): value is RedirectPayload & { __nix_js_action_redirect: true } {
+  return typeof value === "object" && value !== null && (value as Record<string, unknown>).__nix_js_action_redirect === true;
 }
 
 export interface ActionRequest {
@@ -99,7 +99,7 @@ export async function callAction<T = unknown>(
   return payload as T;
 }
 
-export interface NixAction<TInput = unknown, TOutput = unknown> {
+export interface NixJsAction<TInput = unknown, TOutput = unknown> {
   /** Submit the action with the given input. */
   submit(input: TInput): Promise<TOutput | ActionFailure<TOutput> | RedirectResponse>;
   /** Signal that is true while the action is running. */
@@ -116,10 +116,10 @@ export interface NixAction<TInput = unknown, TOutput = unknown> {
  * Returns a `submit` function and signals for `pending`, `data`, and `error`.
  * Useful for wiring actions to forms and islands without manual signal boilerplate.
  */
-export function nixAction<TInput = unknown, TOutput = unknown>(
+export function nixJsAction<TInput = unknown, TOutput = unknown>(
   name: string,
   options: CallActionOptions = {},
-): NixAction<TInput, TOutput> {
+): NixJsAction<TInput, TOutput> {
   const pending = signal(false);
   const error = signal<Error | null>(null);
   const data = signal<TOutput | ActionFailure<TOutput> | RedirectResponse | null>(null);

@@ -44,7 +44,7 @@ function hydrate(marker: IslandMarker, registry: IslandRegistry): void {
   }
 
   // Clean up a previous hydration for this same marker wrapper.
-  const prevDispose = (marker.el as any).__nix_island_dispose;
+  const prevDispose = (marker.el as any).__nix_js_island_dispose;
   if (typeof prevDispose === "function") {
     prevDispose();
   }
@@ -58,7 +58,7 @@ function hydrate(marker: IslandMarker, registry: IslandRegistry): void {
     dispose();
     _islandDisposes.delete(wrappedDispose);
   };
-  (marker.el as any).__nix_island_dispose = wrappedDispose;
+  (marker.el as any).__nix_js_island_dispose = wrappedDispose;
   _islandDisposes.add(wrappedDispose);
 
   const children = Array.from(fragment.childNodes);

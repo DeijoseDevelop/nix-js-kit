@@ -16,7 +16,7 @@ import { handleActionRequest } from "./action/server.js";
 // --- CLI ---
 // =============================================================================
 //
-// Minimal command-line interface for Nix Kit. Supports:
+// Minimal command-line interface for Nix.js Kit. Supports:
 //   nix-js-kit build   — run a production static build
 //   nix-js-kit dev     — run a dev server that rebuilds on file changes
 //   nix-js-kit preview — serve the static build in production mode

@@ -1,5 +1,5 @@
 /**
- * Client-side router for Nix Kit.
+ * Client-side router for Nix.js Kit.
  *
  * Intercepts clicks on internal links, fetches the rendered page body from
  * `/__nix-js/render`, swaps the `#app` content and updates the history state.

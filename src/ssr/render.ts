@@ -100,8 +100,8 @@ export async function renderPage(options: RenderPageOptions): Promise<RenderPage
   });
 
   const title = typeof data === "object" && data && "title" in data
-    ? String((data as { title?: unknown }).title ?? "Nix Kit")
-    : "Nix Kit";
+    ? String((data as { title?: unknown }).title ?? "Nix.js Kit")
+    : "Nix.js Kit";
 
   const { htmlAttributes, headScripts } = collectShellExtras(data, layoutDataList);
 

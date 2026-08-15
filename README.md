@@ -1,13 +1,13 @@
-# Nix Kit
+# Nix.js Kit
 
 [![npm version](https://img.shields.io/npm/v/@deijose/nix-js-kit.svg)](https://www.npmjs.com/package/@deijose/nix-js-kit)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 
 > Full-stack meta-framework for Nix.js — file-based routing, SSG, SSR, ISR, islands, and SPA-like navigation. Zero extra runtime dependencies on the client: Nix.js stays at ~14KB.
 
-## What is Nix Kit?
+## What is Nix.js Kit?
 
-Nix Kit is a meta-framework built on top of [Nix.js](https://nix-js.dev/). It brings conventions similar to Next.js App Router to Nix.js:
+Nix.js Kit is a meta-framework built on top of [Nix.js](https://nix-js.dev/). It brings conventions similar to Next.js App Router to Nix.js:
 
 - `src/app/page.ts` for pages
 - `src/app/page.data.ts` for loaders
@@ -32,7 +32,7 @@ bun add @deijose/nix-js @deijose/nix-js-kit
 import type { PageDataLoad } from "@deijose/nix-js-kit";
 
 export const load: PageDataLoad = async () => {
-  return { title: "Hello Nix Kit" };
+  return { title: "Hello Nix.js Kit" };
 };
 ```
 
@@ -138,7 +138,7 @@ Options:
 - **Vite plugin** — `nixJsKit()` gives a Vite-native dev server with SSR and island entry generation.
 - **Vercel, Netlify, Bun and Node adapters** for deployment.
 - **Custom error pages** — `src/app/404.page.ts` and `src/app/500.page.ts` are rendered for 404/500 responses in SSG, SSR, and all adapters.
-- **Server actions** — define `page.action.ts` files next to `page.ts` and call them from the client with `nixAction()` or `callAction()`.
+- **Server actions** — define `page.action.ts` files next to `page.ts` and call them from the client with `nixJsAction()` or `callAction()`.
 - **Scoped actions** — actions are registered per page path, so names only collide if they are in the same route.
 - **Progressive enhancement** — actions work from plain HTML forms without JavaScript.
 - **`renderToString` for Nix.js templates** without touching the Nix.js core.
@@ -346,7 +346,7 @@ export const generateStaticParams = async () => {
 
 Create a `page.action.ts` file next to a `page.ts` and export async functions.
 They run on the server and can be called from the client with `callAction()` or
-`nixAction()`:
+`nixJsAction()`:
 
 ```ts
 // src/app/contact/page.action.ts
@@ -358,9 +358,9 @@ export async function submitContact(data: { name: string; email: string }) {
 
 ```ts
 // src/app/contact/page.ts or any island
-import { nixAction } from "@deijose/nix-js-kit/action";
+import { nixJsAction } from "@deijose/nix-js-kit/action";
 
-const contact = nixAction("submitContact", { page: "/contact" });
+const contact = nixJsAction("submitContact", { page: "/contact" });
 
 // inside a template
 html`
@@ -379,7 +379,7 @@ html`
 `
 ```
 
-`nixAction` returns a reactive handle with:
+`nixJsAction` returns a reactive handle with:
 
 - `submit(input)` — calls the action and updates the signals.
 - `pending` — signal that is `true` while the action is running.
@@ -405,8 +405,8 @@ and POST to `/__nix-js/actions`:
 
 ```html
 <form action="/__nix-js/actions" method="POST">
-  <input type="hidden" name="__nix_action_name" value="submitContact" />
-  <input type="hidden" name="__nix_action_page" value="/contact" />
+  <input type="hidden" name="__nix_js_action_name" value="submitContact" />
+  <input type="hidden" name="__nix_js_action_page" value="/contact" />
   <input name="name" />
   <input name="email" />
   <button type="submit">Send</button>

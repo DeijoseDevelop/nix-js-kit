@@ -2,6 +2,12 @@
 
 All notable changes to `@deijose/nix-js-kit` will be documented in this file.
 
+## 1.2.7
+
+### Changed
+
+- All identifiers now use the `nix-js` / `nixJs` naming consistently. Public API: `nixAction` is now `nixJsAction` (and the `NixAction` interface is `NixJsAction`). Form protocol fields are now `__nix_js_action_name`, `__nix_js_action_page`, `__nix_js_action_failure`, `__nix_js_action_redirect` and `__nix_js_action_error`; island DOM markers use `__nix_js_island_dispose`. The default document title is `Nix.js Kit App`.
+
 ## 1.2.6
 
 ### Added
@@ -105,13 +111,13 @@ All notable changes to `@deijose/nix-js-kit` will be documented in this file.
 ### Added
 
 - Official v1.0 release. The framework is now stable with full test coverage.
-- All v1.0 roadmap items completed: unit and integration tests, HMR, automatic `PageProps<typeof load>` typing, `nixAction`, scoped actions, progressive enhancement, `fail()`/`redirect()`, `route.ts` API endpoints, and `loading.ts` boundary scanning.
+- All v1.0 roadmap items completed: unit and integration tests, HMR, automatic `PageProps<typeof load>` typing, `nixJsAction`, scoped actions, progressive enhancement, `fail()`/`redirect()`, `route.ts` API endpoints, and `loading.ts` boundary scanning.
 
 ## 0.11.7
 
 ### Added
 
-- `fail()` and `redirect()` helpers for server actions with client-side detection in `callAction`/`nixAction`.
+- `fail()` and `redirect()` helpers for server actions with client-side detection in `callAction`/`nixJsAction`.
 - `route.ts` API endpoints supported in SSR server, Vite dev server, CLI preview/dev, and all adapters.
 - `loading.ts` boundary scanned and included in the SSR module registry.
 - `matchApiRoute` helper exported for dispatching API routes.
@@ -138,7 +144,7 @@ All notable changes to `@deijose/nix-js-kit` will be documented in this file.
 
 - Integration tests for static build + SSR server.
 - Node adapter integration test: builds `.nix-js/node-server.mjs` and verifies it serves SSR pages.
-- Unit tests for `nixAction` helper (pending, data, and error signals).
+- Unit tests for `nixJsAction` helper (pending, data, and error signals).
 - Cleanup hooks for integration tests to remove temporary `dist/` and `.nix-js/` folders.
 
 ## 0.11.3
@@ -169,7 +175,7 @@ All notable changes to `@deijose/nix-js-kit` will be documented in this file.
 
 ### Added
 
-- `nixAction` helper in `@deijose/nix-js-kit/action` with reactive `pending`, `error`, and `data` signals.
+- `nixJsAction` helper in `@deijose/nix-js-kit/action` with reactive `pending`, `error`, and `data` signals.
 - Per-page action scoping: `scanActions` now returns `ActionRegistry` keyed by page URL path.
 - `callAction` accepts an optional `{ page }` option to resolve actions scoped to a specific route.
 - Progressive enhancement: `POST /__nix-js/actions` also accepts HTML form submissions and redirects back when `Accept: application/json` is missing.
@@ -181,7 +187,7 @@ All notable changes to `@deijose/nix-js-kit` will be documented in this file.
 - `callAction` signature updated to `callAction(name, args, options?)` where `args` can be a single value or an array.
 - `callAction` now sends `Accept: application/json` so the server returns JSON instead of a redirect.
 - SSR server, CLI dev/preview, and Vite plugin now forward `Content-Type`, `Accept`, and `Referer` headers to the action handler for correct JSON/form negotiation and redirects.
-- README updated with `nixAction`, scoped actions, and progressive enhancement examples.
+- README updated with `nixJsAction`, scoped actions, and progressive enhancement examples.
 
 ## 0.10.0
 

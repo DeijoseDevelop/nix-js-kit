@@ -137,7 +137,7 @@ describe("fail/redirect helpers", () => {
   it("detects failures across bundling boundaries via markers", () => {
     // Simulate a copy of the class from another bundle (no shared identity).
     class ForeignActionFailure {
-      __nix_action_failure = true;
+      __nix_js_action_failure = true;
       constructor(public status: number, public data: unknown) {}
     }
     const value = new ForeignActionFailure(400, "nope");
