@@ -1,5 +1,5 @@
-import type { ActionRequest } from "./index";
-import { ActionFailure, RedirectResponse } from "../errors";
+import type { ActionRequest } from "./index.js";
+import { isActionFailure, isRedirectResponse } from "../errors.js";
 
 /**
  * Resolves a server action by name and optional page scope.
@@ -130,7 +130,7 @@ export async function handleActionRequest(
 
     const result = await action(...args);
 
-    if (result instanceof ActionFailure) {
+    if (isActionFailure(result)) {
       if (wantsJson) {
         return new Response(JSON.stringify({ __nix_action_failure: true, status: result.status, data: result.data }), {
           status: result.status,
@@ -147,7 +147,7 @@ export async function handleActionRequest(
       });
     }
 
-    if (result instanceof RedirectResponse) {
+    if (isRedirectResponse(result)) {
       if (wantsJson) {
         return new Response(
           JSON.stringify({ __nix_action_redirect: true, status: result.status, location: result.location }),

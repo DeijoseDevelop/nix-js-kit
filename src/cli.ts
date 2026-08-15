@@ -1,15 +1,16 @@
 import { readFile, stat } from "node:fs/promises";
-import { createServer, type Server } from "node:http";
-import { extname, join, resolve, relative } from "node:path";
-import { watch } from "node:fs";
-import { spawnSync } from "node:child_process";
-import { build, type BuildConfig } from "./build/build";
-import { transformProjectFiles } from "./build/transform-source";
-import { createSsrServer } from "./ssr/server";
-import { scanActions, actionNames } from "./action/scan";
-import { scanRoutes } from "./router/route-scanner";
-import { matchRoute, matchApiRoute } from "./ssr/match";
-import { handleActionRequest } from "./action/server";
+import { createServer } from "node:http";
+import { extname, join, resolve, relative, dirname } from "node:path";
+import { existsSync, mkdirSync, writeFileSync, watch } from "node:fs";
+import { spawn, spawnSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
+import { build, type BuildConfig } from "./build/build.js";
+import { transformProjectFiles, transformedAppDir as transformedAppDirOf } from "./build/transform-source.js";
+import { createSsrServer } from "./ssr/server.js";
+import { scanActions, actionNames } from "./action/scan.js";
+import { scanRoutes } from "./router/route-scanner.js";
+import { matchRoute, matchApiRoute } from "./ssr/match.js";
+import { handleActionRequest } from "./action/server.js";
 
 // =============================================================================
 // --- CLI ---
@@ -217,15 +218,16 @@ function toBuildConfig(options: CliOptions): BuildConfig {
 }
 
 async function doBuild(options: CliOptions): Promise<void> {
-  const transformedDir = join(options.root, ".nix-js", "transformed", "src", "app");
+  const transformedRoot = join(options.root, ".nix-js", "transformed");
+  const transformedAppDir = transformedAppDirOf(options.root, options.appDir, options.islandsDir, transformedRoot);
   await transformProjectFiles({
     root: options.root,
     appDir: options.appDir,
     islandsDir: options.islandsDir,
-    outDir: transformedDir,
+    outDir: transformedRoot,
   });
   const buildConfig = toBuildConfig(options);
-  buildConfig.appDir = transformedDir;
+  buildConfig.appDir = transformedAppDir;
   const result = await build(buildConfig);
 
   if (options.islandsDir && !options.clientConfig) {
@@ -259,28 +261,124 @@ async function doBuild(options: CliOptions): Promise<void> {
   }
 }
 
+const DEV_WORKER_ENV = "NIX_JS_KIT_DEV_WORKER";
+
 async function doDev(options: CliOptions): Promise<void> {
   await doBuild(options);
-  if (options.clientConfig) {
-    buildClient(options);
-  }
 
-  const transformedDir = join(options.root, ".nix-js", "transformed", "src", "app");
+  const transformedRoot = join(options.root, ".nix-js", "transformed");
+  const transformedAppDir = transformedAppDirOf(options.root, options.appDir, options.islandsDir, transformedRoot);
   await transformProjectFiles({
     root: options.root,
     appDir: options.appDir,
     islandsDir: options.islandsDir,
-    outDir: transformedDir,
+    outDir: transformedRoot,
   });
 
-  const actions = await scanActions(transformedDir);
-  const routes = await scanRoutes(transformedDir);
+  const actions = await scanActions(transformedAppDir);
+  const routes = await scanRoutes(transformedAppDir);
   const server = createServer((req, res) => handleRequest(req, res, options, actions, routes, true));
+
+  const shutdown = () => {
+    server.close(() => process.exit(0));
+    setTimeout(() => process.exit(0), 2000).unref();
+  };
+  process.on("SIGTERM", shutdown);
+  process.on("SIGINT", shutdown);
+
   server.listen(options.port, options.host, () => {
     console.log(`\n  → Dev server http://${options.host}:${options.port}`);
   });
+}
 
-  watchFiles(options, server);
+/**
+ * Dev supervisor: runs the actual dev server in a child process and restarts
+ * it whenever app/islands source files change. A fresh process means a fresh
+ * module registry, so edits to pages, loaders, layouts and islands are always
+ * picked up (no stale ESM cache).
+ */
+async function doDevSupervisor(options: CliOptions): Promise<void> {
+  // Re-invoke this bin with the same flags; the worker branch (env var set)
+  // runs the actual server in a fresh process.
+  const binPath = process.argv[1];
+  const spawnPath = binPath && existsSync(binPath)
+    ? binPath
+    : fileURLToPath(import.meta.url);
+  const args = process.argv.slice(2);
+
+  let child: import("node:child_process").ChildProcess | null = null;
+  let stopping = false;
+  let intentional = false;
+  let respawnTimer: ReturnType<typeof setTimeout> | null = null;
+
+  const startWorker = () => {
+    intentional = false;
+    console.log("\n[dev] Starting dev server...");
+    child = spawn(process.execPath, [spawnPath, ...args], {
+      env: { ...process.env, [DEV_WORKER_ENV]: "1" },
+      stdio: "inherit",
+    });
+    child.on("exit", (code) => {
+      child = null;
+      if (stopping) return;
+      if (intentional) {
+        // Restart after a source change.
+        respawnTimer = setTimeout(startWorker, 400);
+        return;
+      }
+      if (code !== 0) {
+        console.error(`[dev] Dev server exited with code ${code}; restarting...`);
+        respawnTimer = setTimeout(startWorker, 600);
+      }
+    });
+  };
+
+  const restart = () => {
+    if (!child) return;
+    intentional = true;
+    child.kill("SIGTERM");
+  };
+
+  const watchedDirs = [options.appDir, options.islandsDir].filter(Boolean) as string[];
+  if (watchedDirs.length > 0) {
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const scheduleRestart = () => {
+      console.log("\n[change] Restarting dev server...");
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => restart(), 150);
+    };
+    for (const dir of watchedDirs) {
+      try {
+        watch(dir, { recursive: true }, (event, filename) => {
+          // Editors and sed replace files via atomic rename, which reports the
+          // temporary name (e.g. "blog/sed1234") instead of the .ts file, so
+          // treat every rename as a potential source change. "change" events
+          // only restart when the reported name looks like a source file.
+          if (event === "rename") {
+            scheduleRestart();
+          } else if (filename && /\.ts$/.test(filename)) {
+            scheduleRestart();
+          }
+        });
+      } catch (err) {
+        console.error(`[dev] failed to watch ${dir}:`, err);
+      }
+    }
+  }
+
+  const cleanup = () => {
+    stopping = true;
+    if (respawnTimer) clearTimeout(respawnTimer);
+    if (child) child.kill("SIGTERM");
+    // Exit after the worker has gone, so a new supervisor can take over the port.
+    const deadline = setTimeout(() => process.exit(0), 3000);
+    deadline.unref();
+    if (!child) process.exit(0);
+  };
+  process.on("SIGINT", cleanup);
+  process.on("SIGTERM", cleanup);
+
+  startWorker();
 }
 
 export async function doPreview(options: CliOptions): Promise<import("node:http").Server> {
@@ -299,16 +397,17 @@ export async function doPreview(options: CliOptions): Promise<import("node:http"
     throw err;
   }
 
-  const transformedDir = join(options.outDir, ".nix-js-transformed", "src", "app");
+  const transformedRoot = join(options.outDir, ".nix-js-transformed");
+  const transformedAppDir = transformedAppDirOf(options.root, options.appDir, options.islandsDir, transformedRoot);
   await transformProjectFiles({
     root: options.root,
     appDir: options.appDir,
     islandsDir: options.islandsDir,
-    outDir: transformedDir,
+    outDir: transformedRoot,
   });
 
-  const actions = await scanActions(transformedDir);
-  const routes = await scanRoutes(transformedDir);
+  const actions = await scanActions(transformedAppDir);
+  const routes = await scanRoutes(transformedAppDir);
   const server = createServer((req, res) => handleRequest(req, res, options, actions, routes));
   server.listen(options.port, options.host, () => {
     console.log(`\n  → Preview server http://${options.host}:${options.port}`);
@@ -317,17 +416,18 @@ export async function doPreview(options: CliOptions): Promise<import("node:http"
 }
 
 async function doStart(options: CliOptions): Promise<void> {
-  const transformedDir = join(options.root, ".nix-js", "transformed", "src", "app");
+  const transformedRoot = join(options.root, ".nix-js", "transformed");
+  const transformedAppDir = transformedAppDirOf(options.root, options.appDir, options.islandsDir, transformedRoot);
   await transformProjectFiles({
     root: options.root,
     appDir: options.appDir,
     islandsDir: options.islandsDir,
-    outDir: transformedDir,
+    outDir: transformedRoot,
   });
 
   const ssr = await createSsrServer({
     root: options.root,
-    appDir: transformedDir,
+    appDir: transformedAppDir,
     publicDir: options.outDir,
     clientEntry: options.clientEntry,
     lang: options.lang,
@@ -355,7 +455,37 @@ async function findClientConfig(root: string): Promise<string | undefined> {
 function buildClient(options: CliOptions): void {
   if (!options.clientConfig) return;
   console.log("[client] Building hydration bundle...");
-  const result = spawnSync("npx", ["vite", "build", "--config", options.clientConfig], {
+
+  // Wrap the user's Vite config so the attribute-interpolation plugin is
+  // applied to app/islands sources in the client bundle. Without it, partial
+  // interpolations like href="/movies/${slug}" inside islands would reach the
+  // browser untransformed and break hydration.
+  const wrapperPath = join(options.root, ".nix-js", "vite.client.config.mjs");
+  try {
+    mkdirSync(dirname(wrapperPath), { recursive: true });
+    writeFileSync(
+      wrapperPath,
+      [
+        `import user from ${JSON.stringify(resolve(options.clientConfig))};`,
+        `import { nixJsInterpolationPlugin } from "@deijose/nix-js-kit/vite";`,
+        `const base = typeof user === "function" ? await user({ command: "build", mode: "production" }) : user;`,
+        `const resolved = base && typeof base.then === "function" ? await base : base;`,
+        `export default {`,
+        `  ...(resolved ?? {}),`,
+        `  plugins: [...(resolved?.plugins ?? []), nixJsInterpolationPlugin({`,
+        `    appDir: ${JSON.stringify(join(options.root, "src", "app"))},`,
+        `    islandsDir: ${JSON.stringify(join(options.root, "src", "islands"))},`,
+        `  })],`,
+        `};`,
+        ``,
+      ].join("\n"),
+      "utf8",
+    );
+  } catch (err) {
+    console.error("[client] Failed to write wrapped client config:", err);
+  }
+
+  const result = spawnSync("npx", ["vite", "build", "--config", wrapperPath], {
     stdio: "inherit",
     cwd: options.root,
   });
@@ -368,8 +498,8 @@ async function handleRequest(
   req: import("node:http").IncomingMessage,
   res: import("node:http").ServerResponse,
   options: CliOptions,
-  actions: import("./action/scan").ActionRegistry,
-  routes: import("./router/route-scanner").ScannedRoutes,
+  actions: import("./action/scan.js").ActionRegistry,
+  routes: import("./router/route-scanner.js").ScannedRoutes,
   noCache = false,
 ): Promise<void> {
   const publicActions = actionNames(actions);
@@ -386,14 +516,16 @@ async function handleRequest(
       const headers = new Headers();
       const contentType = req.headers["content-type"];
       const accept = req.headers["accept"];
+      const cookie = req.headers["cookie"];
       if (contentType) headers.set("Content-Type", contentType);
       if (accept) headers.set("Accept", accept);
+      if (cookie) headers.set("Cookie", cookie);
       const request = new Request(`http://${req.headers.host ?? "localhost"}${req.url}`, {
         method: "POST",
         headers,
         body,
       });
-      const response = await handleActionRequest(request, createActionResolver(actions));
+      const response = await handleActionRequest(request, createActionResolver(actions, routes));
       res.writeHead(response.status, Object.fromEntries(response.headers.entries()));
       res.end(await response.text());
     } catch (err) {
@@ -406,21 +538,32 @@ async function handleRequest(
 
   // Render endpoint used by the client-side router for SPA navigation.
   if (urlPath === "/__nix-js/render") {
+    const { renderPageBody, RouteNotFoundError } = await import("./ssr/stream.js");
     try {
       const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`);
       const page = url.searchParams.get("page") ?? "/";
       const search = url.searchParams.get("search") ?? "";
-      const { renderPageBody } = await import("./ssr/stream");
-      const html = await renderPageBody({
+      const wantsJson = (req.headers["accept"] ?? "").includes("application/json");
+      const { body, title } = await renderPageBody({
         routes,
         pathname: page,
         searchParams: new URLSearchParams(search),
         config: { lang: options.lang, clientEntry: options.clientEntry },
         actions: publicActions,
       });
-      res.writeHead(200, cacheHeaders({ "Content-Type": "text/html; charset=utf-8" }));
-      res.end(html);
+      if (wantsJson) {
+        res.writeHead(200, cacheHeaders({ "Content-Type": "application/json; charset=utf-8" }));
+        res.end(JSON.stringify({ title, body }));
+      } else {
+        res.writeHead(200, cacheHeaders({ "Content-Type": "text/html; charset=utf-8" }));
+        res.end(body);
+      }
     } catch (err) {
+      if (err instanceof RouteNotFoundError) {
+        res.writeHead(404, cacheHeaders({ "Content-Type": "text/plain; charset=utf-8" }));
+        res.end("Not Found");
+        return;
+      }
       console.error("[nix-js-kit] render endpoint error:", err);
       res.writeHead(500, cacheHeaders({ "Content-Type": "text/plain; charset=utf-8" }));
       res.end(String(err));
@@ -446,8 +589,10 @@ async function handleRequest(
       const headers = new Headers();
       const contentType = req.headers["content-type"];
       const accept = req.headers["accept"];
+      const cookie = req.headers["cookie"];
       if (contentType) headers.set("Content-Type", contentType);
       if (accept) headers.set("Accept", accept);
+      if (cookie) headers.set("Cookie", cookie);
       const request = new Request(`http://${req.headers.host ?? "localhost"}${req.url}`, {
         method: req.method,
         headers,
@@ -487,10 +632,21 @@ async function handleRequest(
   }
 
   // Fallback: try to render the route dynamically (e.g. for slugs not generated as static files).
+  const { renderPage, renderErrorPage } = await import("./ssr/render.js");
   try {
-    const { renderPage } = await import("./ssr/render");
     const match = matchRoute(originalPath, routes.pages);
     if (!match) {
+      const errorResult = await renderErrorPage({
+        routes,
+        status: 404,
+        config: { lang: options.lang, clientEntry: options.clientEntry },
+        actions: publicActions,
+      });
+      if (errorResult) {
+        res.writeHead(errorResult.status, cacheHeaders({ "Content-Type": "text/html; charset=utf-8" }));
+        res.end(errorResult.html);
+        return;
+      }
       res.writeHead(404, cacheHeaders({ "Content-Type": "text/plain; charset=utf-8" }));
       res.end(`Not found: ${req.url}`);
       return;
@@ -506,14 +662,33 @@ async function handleRequest(
     res.end(result.html);
   } catch (err) {
     console.error("[nix-js-kit] preview fallback render error:", err);
+    const errorResult = await renderErrorPage({
+      routes,
+      status: 500,
+      config: { lang: options.lang, clientEntry: options.clientEntry },
+      actions: publicActions,
+    }).catch(() => undefined);
+    if (errorResult) {
+      res.writeHead(errorResult.status, cacheHeaders({ "Content-Type": "text/html; charset=utf-8" }));
+      res.end(errorResult.html);
+      return;
+    }
     res.writeHead(500, cacheHeaders({ "Content-Type": "text/plain; charset=utf-8" }));
     res.end(String(err));
   }
 }
 
-function createActionResolver(actions: import("./action/scan").ActionRegistry) {
+function createActionResolver(
+  actions: import("./action/scan.js").ActionRegistry,
+  routes: import("./router/route-scanner.js").ScannedRoutes,
+) {
   return async (name: string, page?: string) => {
-    const pageActions = page ? actions[page] : Object.values(actions).find((p) => p[name]) ?? undefined;
+    const pageKey = page
+      ? routes.pages.some((route) => route.path === page)
+        ? page
+        : (matchRoute(page, routes.pages)?.route.path ?? page)
+      : undefined;
+    const pageActions = pageKey ? actions[pageKey] : Object.values(actions).find((p) => p[name]) ?? undefined;
     const actionPath = pageActions ? pageActions[name] : undefined;
     if (!actionPath) return undefined;
     const mod = (await import(actionPath)) as Record<string, unknown>;
@@ -560,57 +735,6 @@ function guessContentType(filePath: string): string {
   }
 }
 
-function watchFiles(options: CliOptions, server: Server): void {
-  const watchedDirs = [options.appDir, options.islandsDir].filter(Boolean) as string[];
-  if (watchedDirs.length === 0) return;
-
-  let rebuilding = false;
-  let pendingRebuild = false;
-
-  const scheduleRebuild = () => {
-    if (rebuilding) {
-      pendingRebuild = true;
-      return;
-    }
-    rebuilding = true;
-
-    console.log("\n[change] Rebuilding...");
-    build(toBuildConfig(options))
-      .then(() => {
-        if (options.clientConfig) {
-          buildClient(options);
-        }
-        console.log("[done] Reload the page to see changes.");
-      })
-      .catch((err) => {
-        console.error("[error] Build failed:", err);
-      })
-      .finally(() => {
-        rebuilding = false;
-        if (pendingRebuild) {
-          pendingRebuild = false;
-          scheduleRebuild();
-        }
-      });
-  };
-
-  const watchers = watchedDirs.map((dir) =>
-    watch(dir, { recursive: true }, (_event, filename) => {
-      if (filename && filename.endsWith(".ts")) {
-        scheduleRebuild();
-      }
-    }),
-  );
-
-  const cleanup = () => {
-    for (const w of watchers) w.close();
-    server.close();
-  };
-
-  process.on("SIGINT", cleanup);
-  process.on("SIGTERM", cleanup);
-}
-
 async function doAdapter(options: CliOptions): Promise<void> {
   const adapterOptions = {
     root: options.root,
@@ -622,19 +746,19 @@ async function doAdapter(options: CliOptions): Promise<void> {
     hydrateImport: options.hydrateImport,
   };
   if (options.adapterName === "vercel") {
-    const { vercelAdapter } = await import("./adapters/vercel");
+    const { vercelAdapter } = await import("./adapters/vercel.js");
     await vercelAdapter.build(adapterOptions);
     console.log("\n  → Vercel output generated at .vercel/output");
   } else if (options.adapterName === "netlify") {
-    const { netlifyAdapter } = await import("./adapters/netlify");
+    const { netlifyAdapter } = await import("./adapters/netlify.js");
     await netlifyAdapter.build(adapterOptions);
     console.log("\n  → Netlify output generated at netlify/functions/__nix-js-kit.mjs");
   } else if (options.adapterName === "bun") {
-    const { bunAdapter } = await import("./adapters/bun");
+    const { bunAdapter } = await import("./adapters/bun.js");
     await bunAdapter.build(adapterOptions);
     console.log("\n  → Bun server generated at .nix-js/bun-server.ts");
   } else if (options.adapterName === "node") {
-    const { nodeAdapter } = await import("./adapters/node");
+    const { nodeAdapter } = await import("./adapters/node.js");
     await nodeAdapter.build(adapterOptions);
     console.log("\n  → Node server generated at .nix-js/node-server.mjs");
   }
@@ -650,15 +774,9 @@ export async function run(argv: string[]): Promise<void> {
     await doStart(options);
   } else if (options.command === "adapter") {
     await doAdapter(options);
-  } else {
+  } else if (process.env[DEV_WORKER_ENV] === "1") {
     await doDev(options);
+  } else {
+    await doDevSupervisor(options);
   }
-}
-
-// Only run when invoked directly (not when imported for testing).
-if (import.meta.url === `file://${process.argv[1]}`) {
-  run(process.argv).catch((err) => {
-    console.error(err);
-    process.exit(1);
-  });
 }

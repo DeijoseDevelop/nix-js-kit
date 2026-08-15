@@ -1,6 +1,6 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, relative, sep } from "node:path";
-import type { IslandModule } from "./scan";
+import type { IslandModule } from "./scan.js";
 
 // =============================================================================
 // --- Client entry generator ---

@@ -21,7 +21,7 @@
  */
 
 import { signal } from "@deijose/nix-js";
-import { ActionFailure, RedirectResponse } from "../errors";
+import { ActionFailure, RedirectResponse } from "../errors.js";
 
 interface ActionFailurePayload {
   __nix_action_failure?: boolean;

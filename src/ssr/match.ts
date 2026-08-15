@@ -1,4 +1,4 @@
-import type { ApiRoute, PageRoute } from "../router/route-scanner";
+import type { ApiRoute, PageRoute } from "../router/route-scanner.js";
 
 export interface MatchResult {
   route: PageRoute;

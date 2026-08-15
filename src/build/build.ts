@@ -1,11 +1,11 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { join, dirname } from "node:path";
-import { scanRoutes, type PageRoute, type ScannedRoutes } from "../router/route-scanner";
-import { scanIslands, type IslandModule } from "../island/scan";
-import { generateClientEntry } from "../island/generate-entry";
-import { renderPage, renderErrorPage } from "../ssr/render";
-import { scanActions, actionNames } from "../action/scan";
-import type { RouteParams, GenerateStaticParams } from "../types";
+import { scanRoutes, type PageRoute, type ScannedRoutes } from "../router/route-scanner.js";
+import { scanIslands, type IslandModule } from "../island/scan.js";
+import { generateClientEntry } from "../island/generate-entry.js";
+import { renderPage, renderErrorPage } from "../ssr/render.js";
+import { scanActions, actionNames } from "../action/scan.js";
+import type { RouteParams, GenerateStaticParams } from "../types.js";
 
 // =============================================================================
 // --- SSG build orchestrator ---

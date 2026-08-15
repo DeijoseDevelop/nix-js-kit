@@ -2,6 +2,36 @@
 
 All notable changes to `@deijose/nix-js-kit` will be documented in this file.
 
+## 1.2.6
+
+### Added
+
+- `fail()` and `redirect()` now accept both argument orders (`fail(400, data)` or `fail(data, 400)`, `redirect(303, "/x")` or `redirect("/x")`) and are detected via marker fields, so they work even when the CLI/adapters are bundled separately from the user's action modules.
+- Source transform (`transformProjectFiles`) mirrors the project layout and compensates relative imports that escape the mirrored tree, so apps importing outside `src/` (e.g. the kit's own example) build correctly.
+- Vite plugin now serves the `/__nix-js/render` endpoint (HTML or JSON) used by the SPA router and streaming boundaries.
+- ISR now also caches the `/__nix-js/render` endpoint, so streamed pages (with `loading.ts`) regenerate on their `revalidate` TTL instead of being skipped.
+- Data loaders (page and layouts) can return a top-level `htmlAttributes` object to set attributes on the `<html>` element of the document shell (e.g. `{ "data-theme": "dark" }`), applied in SSG, SSR and streaming shells — useful for themes persisted via cookie that must survive redirects.
+- Data loaders can also return `headScripts: string[]`: inline scripts injected into `<head>` that run synchronously before the first paint and before the deferred client bundle. This is the standard no-flash bootstrap (e.g. applying a stored theme to static pages whose SSG shell was baked with the build-time theme).
+- The client router now exports `navigateTo(pathname, search, push)`: a programmatic SPA navigation that fetches the fresh page body from `/__nix-js/render`, swaps `#app`, updates the title and re-hydrates islands. Server actions can use it after a redirect to show fresh server data (e.g. a new review) without a full reload that would serve a stale static page.
+
+### Fixed
+
+- CLI bin re-executes itself under the Bun runtime for bun-managed projects, so apps using `bun:sqlite` work with `nix-js-kit build/dev/start/preview`.
+- Attribute interpolation plugin: rewritten with a proper template scanner. Handles nested braces/strings in expressions, single-quoted attributes, comments, and leaves full-value quoted interpolations (`datetime="${x}"`) and unquoted bindings (`value=${() => x}`) untouched.
+- Streaming shells now fetch the concrete path (`/blog/:slug` → `/blog/hello-world`) instead of the route pattern.
+- Client router now requests JSON (`{ title, body }`) from the render endpoint (titles update on SPA navigation), preserves query strings, and ignores modifier-key clicks.
+- Island `data-props` serialization escapes single quotes, so props containing apostrophes hydrate correctly.
+- Declaration files are emitted with explicit `.js` extensions, fixing type resolution for NodeNext consumers; the main entry no longer re-exports the CLI or the Vite plugin (use `@deijose/nix-js-kit/cli` / `@deijose/nix-js-kit/vite`), removing the CLI side-effect from adapter bundles.
+- Adapters: the SSR entry now embeds the full route table (no runtime filesystem scanning), includes `layout.data.ts` modules in the registry, fixes action resolution by page scope, preserves the query string for page rendering, and serves the `/__nix-js/render` endpoint (HTML or JSON) so the SPA router and streaming keep working in production. Works with Node (`node:sqlite`) and Bun (`bun:sqlite`) runtimes.
+- SSR page rendering now forwards the request query string as `searchParams` to loaders.
+- Cookies are forwarded to API routes and server actions in every server mode, so auth/middleware that reads the session works in `start`, `preview`, `dev` and the Vite plugin.
+- Server actions scoped to dynamic routes now work: the resolver maps concrete page paths (`/movies/inception`) to their route pattern (`/movies/:slug`) in `start`, `preview`, `dev`, the Vite plugin and all adapters.
+- The client hydration bundle is now built through a wrapped Vite config that automatically injects the attribute-interpolation plugin, so partial interpolations inside islands (e.g. `href="/movies/${slug}"`) hydrate correctly instead of producing broken attributes.
+- `preview` now renders the custom 404/500 error pages instead of plain-text responses.
+- The `/__nix-js/render` endpoint returns a clean 404 (instead of a 500 with a stack trace) when the requested path has no matching route, in every server mode and in the adapters.
+- Dev server (`nix-js-kit dev`) now runs the actual server in a child process supervised by a watcher: any source change restarts the worker, so page/loader/layout/island edits are always served (previously the ESM module cache served stale modules). Atomic saves (sed/editors) are detected via `rename` events.
+- The dev supervisor exits on SIGTERM so stale processes cannot hold the port.
+
 ## 1.2.5
 
 ### Added

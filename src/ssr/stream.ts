@@ -1,10 +1,11 @@
 import type { NixTemplate } from "@deijose/nix-js";
-import { renderToString } from "../render/render-to-string";
-import { documentShell } from "../build/document-shell";
-import type { PageRoute, ScannedRoutes } from "../router/route-scanner";
-import type { BuildConfig } from "../build/build";
-import { matchRoute } from "./match";
-import { renderPage } from "./render";
+import { renderToString } from "../render/render-to-string.js";
+import { documentShell } from "../build/document-shell.js";
+import type { PageRoute, ScannedRoutes } from "../router/route-scanner.js";
+import type { BuildConfig } from "../build/build.js";
+import type { PageDataLoad } from "../types.js";
+import { matchRoute } from "./match.js";
+import { renderPage } from "./render.js";
 
 export interface StreamingPageOptions {
   route: PageRoute;
@@ -17,6 +18,18 @@ export interface StreamingPageOptions {
 }
 
 const defaultImport = (path: string) => import(path);
+
+/** Builds the concrete URL path for a route pattern given matched params. */
+function buildConcretePath(
+  routePath: string,
+  params: Record<string, string | string[]>,
+): string {
+  return routePath.replace(/:([a-zA-Z0-9_]+)(\*)?/g, (_m, name: string, catchAll?: string) => {
+    const value = params[name];
+    if (value === undefined || value === null) return "";
+    return catchAll ? (Array.isArray(value) ? value.join("/") : String(value)) : String(value);
+  });
+}
 
 function streamingScript(page: string, search: string): string {
   const src = `
@@ -43,7 +56,7 @@ function streamingScript(page: string, search: string): string {
  * is fetched and injected by the client.
  */
 export async function renderStreamingPage(options: StreamingPageOptions): Promise<string> {
-  const { route, searchParams, config, importer = defaultImport, actions } = options;
+  const { route, params, searchParams, config, importer = defaultImport, actions } = options;
   if (!route.loadingPath) {
     throw new Error("Cannot stream a page without a loading.ts boundary");
   }
@@ -53,7 +66,32 @@ export async function renderStreamingPage(options: StreamingPageOptions): Promis
   };
 
   const loadingBody = await renderToString(() => Loading());
-  const body = `<div id="nix-js-loading">${loadingBody}</div>${streamingScript(route.path, searchParams.toString())}`;
+  const concretePath = buildConcretePath(route.path, params);
+  const body = `<div id="nix-js-loading">${loadingBody}</div>${streamingScript(concretePath, searchParams.toString())}`;
+
+  // Apply <html> attributes and head scripts (e.g. data-theme and the no-flash
+  // theme script) from the root layout loader so the shell paints correctly
+  // before the real content arrives.
+  const htmlAttributes: Record<string, string> = {};
+  const headScripts: string[] = [];
+  if (route.layouts.length > 0) {
+    const rootLayout = route.layouts[0];
+    const dataPath = rootLayout.replace(/layout\.ts$/, "layout.data.ts");
+    if (dataPath !== rootLayout) {
+      try {
+        const mod = (await importer(dataPath)) as { load?: PageDataLoad };
+        const layoutData = mod.load ? await mod.load({ params, searchParams, request: options.request }) : undefined;
+        if (layoutData && typeof layoutData === "object") {
+          const attrs = (layoutData as { htmlAttributes?: Record<string, string> }).htmlAttributes;
+          if (attrs) Object.assign(htmlAttributes, attrs);
+          const scripts = (layoutData as { headScripts?: string[] }).headScripts;
+          if (Array.isArray(scripts)) headScripts.push(...scripts);
+        }
+      } catch {
+        // The root layout loader is optional; ignore failures here.
+      }
+    }
+  }
 
   return documentShell({
     title: "Loading...",
@@ -61,6 +99,8 @@ export async function renderStreamingPage(options: StreamingPageOptions): Promis
     body,
     data: { __nix_js_streaming: true, page: route.path },
     actions,
+    htmlAttributes,
+    headScripts,
     clientEntry: config.clientEntry,
   });
 }
@@ -75,15 +115,32 @@ export interface RenderPageBodyOptions {
   request?: Request;
 }
 
+export interface RenderPageBodyResult {
+  /** Inner HTML body for the page (without the document shell). */
+  body: string;
+  /** Page title extracted from the rendered shell. */
+  title: string;
+  /** Full rendered document shell (used for ISR caching). */
+  fullHtml?: string;
+}
+
+/** Thrown by `renderPageBody` when the requested path has no matching route. */
+export class RouteNotFoundError extends Error {
+  constructor(pathname: string) {
+    super(`No route found for ${pathname}`);
+    this.name = "RouteNotFoundError";
+  }
+}
+
 /**
  * Render only the inner HTML body for a page. Used by the streaming endpoint
  * to inject the real content into the shell.
  */
-export async function renderPageBody(options: RenderPageBodyOptions): Promise<string> {
+export async function renderPageBody(options: RenderPageBodyOptions): Promise<RenderPageBodyResult> {
   const { routes, pathname, searchParams, config, actions, importer = defaultImport, request } = options;
   const match = matchRoute(pathname, routes.pages);
   if (!match) {
-    throw new Error(`No route found for ${pathname}`);
+    throw new RouteNotFoundError(pathname);
   }
 
   const result = await renderPage({
@@ -97,5 +154,11 @@ export async function renderPageBody(options: RenderPageBodyOptions): Promise<st
   });
 
   const bodyMatch = result.html.match(/<div id="app">([\s\S]*)<\/div>\s*(<script|$)/);
-  return bodyMatch ? bodyMatch[1].trim() : result.html;
+  const body = bodyMatch ? bodyMatch[1].trim() : result.html;
+  const titleMatch = result.html.match(/<title>([^<]*)<\/title>/);
+  return {
+    body,
+    title: titleMatch ? titleMatch[1] : "",
+    fullHtml: result.html,
+  };
 }

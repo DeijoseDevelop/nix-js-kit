@@ -72,6 +72,35 @@ describe("integration: build + SSR", () => {
       });
       assert.equal(apiPost.status, 201);
       assert.deepEqual(await apiPost.json(), { id: 2, title: "New" });
+
+      // Cookies must be forwarded to API routes (used by auth/middleware).
+      const cookieApi = await fetch(`http://127.0.0.1:${port}/api/posts`, {
+        headers: { Cookie: "session=test-session-123" },
+      });
+      assert.equal(cookieApi.status, 200);
+    } finally {
+      await server.close();
+    }
+  });
+
+  it("caches streamed content via the render endpoint with ISR", async () => {
+    const cacheDir = resolve(root, ".nix-js/cache-render");
+    await rm(cacheDir, { recursive: true, force: true });
+    const server = await createSsrServer({
+      appDir,
+      cacheDir,
+      defaultRevalidate: 60,
+      port: 0,
+    });
+    await server.listen();
+    const { port } = server.server.address() as { port: number };
+
+    try {
+      const render = await fetch(`http://127.0.0.1:${port}/__nix-js/render?page=%2F&search=`);
+      assert.equal(render.status, 200);
+      const cached = await getCachedHtml(cacheDir, "/__nix-js/render/?");
+      assert.ok(cached, "render endpoint content should be cached");
+      assert.ok(cached.html.includes("<h1>Hello from test</h1>"), "cached HTML should match");
     } finally {
       await server.close();
     }

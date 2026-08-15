@@ -1,14 +1,14 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, relative, resolve } from "node:path";
 import type { Plugin, Connect, ViteDevServer } from "vite";
-import { scanRoutes } from "../router/route-scanner";
-import { scanActions, actionNames, type ActionRegistry } from "../action/scan";
-import { handleActionRequest } from "../action/server";
-import { scanIslands } from "../island/scan";
-import { buildEntrySource } from "../island/generate-entry";
-import { matchApiRoute, matchRoute } from "../ssr/match";
-import { renderPage, renderErrorPage } from "../ssr/render";
-import { nixJsInterpolationPlugin } from "./interpolation-plugin";
+import { scanRoutes } from "../router/route-scanner.js";
+import { scanActions, actionNames, type ActionRegistry } from "../action/scan.js";
+import { handleActionRequest } from "../action/server.js";
+import { scanIslands } from "../island/scan.js";
+import { buildEntrySource } from "../island/generate-entry.js";
+import { matchApiRoute, matchRoute } from "../ssr/match.js";
+import { renderPage, renderErrorPage } from "../ssr/render.js";
+import { nixJsInterpolationPlugin } from "./interpolation-plugin.js";
 
 export interface NixJsKitViteOptions {
   /** App directory relative to Vite root (default: src/app). */
@@ -66,7 +66,7 @@ export function nixJsKit(options: NixJsKitViteOptions = {}): Plugin[] {
 
     configureServer(server) {
       const ssrLoad = createSsrLoader(server, root);
-      const resolveAction = createActionResolver(() => actions, ssrLoad);
+      const resolveAction = createActionResolver(() => actions, () => routes, ssrLoad);
 
       const appDirPath = resolve(root, appDir);
       const islandsDirPath = resolve(root, islandsDir);
@@ -85,8 +85,10 @@ export function nixJsKit(options: NixJsKitViteOptions = {}): Plugin[] {
             const headers = new Headers();
             const contentType = req.headers["content-type"];
             const accept = req.headers["accept"];
+            const cookie = req.headers["cookie"];
             if (contentType) headers.set("Content-Type", contentType);
             if (accept) headers.set("Accept", accept);
+            if (cookie) headers.set("Cookie", cookie);
             const request = new Request(`http://${req.headers.host ?? "localhost"}${req.url}`, {
               method: "POST",
               headers,
@@ -120,6 +122,43 @@ export function nixJsKit(options: NixJsKitViteOptions = {}): Plugin[] {
         const currentRoutes = routes ?? (routes = await scanRoutes(appDirPath));
         const currentActions = Object.keys(actions).length ? actions : (actions = await scanActions(appDirPath));
 
+        // Render endpoint used by the SPA router and streaming boundaries.
+        if (urlPath === "/__nix-js/render") {
+          const { renderPageBody, RouteNotFoundError } = await import("../ssr/stream.js");
+          try {
+            const renderUrl = new URL(req.url ?? "/", "http://localhost");
+            const page = renderUrl.searchParams.get("page") ?? "/";
+            const search = renderUrl.searchParams.get("search") ?? "";
+            const wantsJson = (req.headers["accept"] ?? "").includes("application/json");
+            const { body, title } = await renderPageBody({
+              routes: currentRoutes,
+              pathname: page,
+              searchParams: new URLSearchParams(search),
+              config: { lang, clientEntry },
+              actions: actionNames(currentActions),
+              importer: ssrLoad,
+            });
+            if (wantsJson) {
+              res.writeHead(200, { "Content-Type": "application/json; charset=utf-8" });
+              res.end(JSON.stringify({ title, body }));
+            } else {
+              res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+              res.end(body);
+            }
+            return;
+          } catch (err) {
+            if (err instanceof RouteNotFoundError) {
+              res.writeHead(404, { "Content-Type": "text/plain; charset=utf-8" });
+              res.end("Not Found");
+              return;
+            }
+            console.error("[nix-js-kit] render endpoint error:", err);
+            res.writeHead(500, { "Content-Type": "text/plain; charset=utf-8" });
+            res.end(String(err));
+            return;
+          }
+        }
+
         if (!urlPath.startsWith("/@") && !urlPath.startsWith("/node_modules/") && !urlPath.includes(".")) {
           const apiMatch = matchApiRoute(urlPath, currentRoutes.api);
           if (apiMatch) {
@@ -135,8 +174,10 @@ export function nixJsKit(options: NixJsKitViteOptions = {}): Plugin[] {
               const headers = new Headers();
               const contentType = req.headers["content-type"];
               const accept = req.headers["accept"];
+              const cookie = req.headers["cookie"];
               if (contentType) headers.set("Content-Type", contentType);
               if (accept) headers.set("Accept", accept);
+              if (cookie) headers.set("Cookie", cookie);
               const request = new Request(`http://${req.headers.host ?? "localhost"}${req.url}`, {
                 method: req.method,
                 headers,
@@ -168,6 +209,8 @@ export function nixJsKit(options: NixJsKitViteOptions = {}): Plugin[] {
 
   return [mainPlugin, nixJsInterpolationPlugin({ appDir, islandsDir })];
 }
+
+export { nixJsInterpolationPlugin, type InterpolationPluginOptions } from "./interpolation-plugin.js";
 
 function setupHmr(
   server: ViteDevServer,
@@ -235,12 +278,20 @@ function createSsrLoader(server: ViteDevServer, root: string) {
 }
 
 function createActionResolver(
-  getActions: () => import("../action/scan").ActionRegistry,
+  getActions: () => import("../action/scan.js").ActionRegistry,
+  getRoutes: () => Awaited<ReturnType<typeof scanRoutes>> | null,
   ssrLoad: (path: string) => Promise<unknown>,
 ) {
   return async (name: string, page?: string) => {
     const actions = getActions();
-    const pageActions = page ? actions[page] : Object.values(actions).find((p) => p[name]) ?? undefined;
+    const routes = getRoutes();
+    let pageKey: string | undefined;
+    if (page && routes) {
+      pageKey = routes.pages.some((route) => route.path === page)
+        ? page
+        : (matchRoute(page, routes.pages)?.route.path ?? page);
+    }
+    const pageActions = pageKey ? actions[pageKey] : Object.values(actions).find((p) => p[name]) ?? undefined;
     const actionPath = pageActions ? pageActions[name] : undefined;
     if (!actionPath) return undefined;
     const mod = (await ssrLoad(actionPath)) as Record<string, unknown>;
@@ -296,13 +347,21 @@ async function handleSsrRequest(
   const match = matchRoute(urlPath, options.routes.pages);
   if (match) {
     try {
+      const headers = new Headers();
+      const cookie = req.headers["cookie"];
+      if (cookie) headers.set("Cookie", cookie);
+      const request = new Request(`http://${req.headers.host ?? "localhost"}${req.url}`, {
+        method: req.method,
+        headers,
+      });
       const { html } = await renderPage({
         route: match.route,
         params: match.params,
-        searchParams: match.searchParams,
+        searchParams: new URLSearchParams(req.url?.split("?")[1] ?? ""),
         config,
         importer: options.ssrLoad,
         actions: publicActions,
+        request,
       });
       res.writeHead(200, {
         "Content-Type": "text/html; charset=utf-8",

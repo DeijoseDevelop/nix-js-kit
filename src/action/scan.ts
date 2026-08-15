@@ -1,5 +1,5 @@
 import { resolve, relative } from "node:path";
-import { scanRoutes } from "../router/route-scanner";
+import { scanRoutes } from "../router/route-scanner.js";
 
 /**
  * Registry of server actions grouped by page path.

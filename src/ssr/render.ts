@@ -1,9 +1,9 @@
 import type { NixTemplate } from "@deijose/nix-js";
-import { renderToString } from "../render/render-to-string";
-import { documentShell } from "../build/document-shell";
-import type { PageRoute, ScannedRoutes } from "../router/route-scanner";
-import type { BuildConfig } from "../build/build";
-import type { PageDataLoad, PageProps, RouteParams } from "../types";
+import { renderToString } from "../render/render-to-string.js";
+import { documentShell } from "../build/document-shell.js";
+import type { PageRoute, ScannedRoutes } from "../router/route-scanner.js";
+import type { BuildConfig } from "../build/build.js";
+import type { PageDataLoad, PageProps, RouteParams } from "../types.js";
 import { existsSync } from "node:fs";
 
 export interface RenderPageOptions {
@@ -25,6 +25,28 @@ export interface RenderPageResult {
 }
 
 const defaultImport = (path: string) => import(path);
+
+/**
+ * Collects `<html>` attributes and head scripts declared by data loaders
+ * (page and layouts) via top-level `htmlAttributes` / `headScripts` fields.
+ */
+export function collectShellExtras(
+  pageData: unknown,
+  layoutDataList: unknown[],
+): { htmlAttributes: Record<string, string>; headScripts: string[] } {
+  const htmlAttributes: Record<string, string> = {};
+  const headScripts: string[] = [];
+  const merge = (value: unknown) => {
+    if (!value || typeof value !== "object") return;
+    const attrs = (value as { htmlAttributes?: Record<string, string> }).htmlAttributes;
+    if (attrs) Object.assign(htmlAttributes, attrs);
+    const scripts = (value as { headScripts?: string[] }).headScripts;
+    if (Array.isArray(scripts)) headScripts.push(...scripts);
+  };
+  for (const layoutData of layoutDataList) merge(layoutData);
+  merge(pageData);
+  return { htmlAttributes, headScripts };
+}
 
 export async function renderPage(options: RenderPageOptions): Promise<RenderPageResult> {
   const { route, params = {}, searchParams = new URLSearchParams(), config, importer = defaultImport, actions, request } = options;
@@ -81,12 +103,16 @@ export async function renderPage(options: RenderPageOptions): Promise<RenderPage
     ? String((data as { title?: unknown }).title ?? "Nix Kit")
     : "Nix Kit";
 
+  const { htmlAttributes, headScripts } = collectShellExtras(data, layoutDataList);
+
   const html = documentShell({
     title,
     lang: config.lang,
     body,
     data,
     actions,
+    htmlAttributes,
+    headScripts,
     clientEntry: config.clientEntry,
   });
 

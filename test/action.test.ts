@@ -3,6 +3,8 @@ import assert from "node:assert/strict";
 import { scanActions } from "../src/action/scan.ts";
 import { handleActionRequest } from "../src/action/server.ts";
 import { fail, redirect } from "../src/errors.ts";
+import { scanRoutes } from "../src/router/route-scanner.ts";
+import { resolveActionPageKey } from "../src/ssr/server.ts";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
 
@@ -14,6 +16,20 @@ describe("scanActions", () => {
     const actions = await scanActions(appDir);
     assert.equal(actions["/"].greet, resolve(appDir, "page.action.ts"));
     assert.equal(actions["/"].subscribe, resolve(appDir, "page.action.ts"));
+  });
+});
+
+describe("resolveActionPageKey", () => {
+  it("maps concrete dynamic paths to their route pattern", async () => {
+    const routes = await scanRoutes(resolve(__dirname, "fixtures/minimal/src/app"));
+    // Dynamic route fixture: /blog/[slug]
+    assert.equal(resolveActionPageKey("/blog/hello-world", routes), "/blog/:slug");
+    assert.equal(resolveActionPageKey("/blog/another-post", routes), "/blog/:slug");
+  });
+
+  it("keeps exact static paths", async () => {
+    const routes = await scanRoutes(resolve(__dirname, "fixtures/minimal/src/app"));
+    assert.equal(resolveActionPageKey("/", routes), "/");
   });
 });
 

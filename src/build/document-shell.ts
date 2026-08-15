@@ -14,6 +14,15 @@ export interface ShellOptions {
   title?: string;
   /** `<html lang>` attribute. */
   lang?: string;
+  /** Additional attributes for the `<html>` element, e.g. `{ "data-theme": "dark" }`. */
+  htmlAttributes?: Record<string, string>;
+  /**
+   * Inline scripts injected into `<head>`. They run synchronously while the
+   * document parses — before the first paint and before the (deferred) client
+   * bundle — so they are the right place for no-flash bootstrapping (e.g.
+   * applying a stored theme before the page becomes visible).
+   */
+  headScripts?: string[];
   /** Loader data serialized into `<script id="nix-js-data">`. */
   data?: unknown;
   /** Per-page action names serialized into `<script id="nix-js-actions">`. */
@@ -44,7 +53,7 @@ function serializeData(data: unknown): string {
 
 /** Wraps rendered body HTML into a full HTML document. */
 export function documentShell(opts: ShellOptions): string {
-  const { body, title = "Nix Kit App", lang = "es", data, actions, clientEntry } = opts;
+  const { body, title = "Nix Kit App", lang = "es", data, actions, clientEntry, htmlAttributes, headScripts } = opts;
 
   const dataScript =
     data !== undefined
@@ -59,12 +68,26 @@ export function documentShell(opts: ShellOptions): string {
     ? `\n    <script type="module" src="${escapeHtml(clientEntry)}"></script>`
     : "";
 
+  const htmlAttrs = htmlAttributes
+    ? Object.entries(htmlAttributes)
+        .filter(([, value]) => value !== undefined && value !== null && value !== "")
+        .map(([key, value]) => ` ${escapeHtml(key)}="${escapeHtml(String(value))}"`)
+        .join("")
+    : "";
+
+  const headScriptsHtml = headScripts
+    ? headScripts
+        .filter((script) => typeof script === "string" && script.trim().length > 0)
+        .map((script) => `\n    <script>${script.replace(/<\/script>/gi, "<\\/script>")}</script>`)
+        .join("")
+    : "";
+
   return `<!DOCTYPE html>
-<html lang="${escapeHtml(lang)}">
+<html lang="${escapeHtml(lang)}"${htmlAttrs}>
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>${escapeHtml(title)}</title>
+    <title>${escapeHtml(title)}</title>${headScriptsHtml}
   </head>
   <body>
     <div id="app">${body}</div>${dataScript}${actionsScript}${entryScript}

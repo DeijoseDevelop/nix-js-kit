@@ -1,8 +1,8 @@
 import { mkdir, rm, stat, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
-import { scanRoutes } from "../router/route-scanner";
-import type { Adapter } from "./index";
-import { writeSsrEntry } from "./shared";
+import { scanRoutes } from "../router/route-scanner.js";
+import type { Adapter } from "./index.js";
+import { writeSsrEntry } from "./shared.js";
 
 /**
  * Bun adapter for nix-js-kit.
@@ -41,7 +41,7 @@ export const bunAdapter: Adapter = {
     const routes = await scanRoutes(appDir);
 
     const entryPath = resolve(generatedDir, "bun-index.ts");
-    await writeSsrEntry(entryPath, routes, options, appDir);
+    await writeSsrEntry(entryPath, routes, options);
 
     // Write the Bun server entry.
     const serverPath = resolve(generatedDir, "bun-server.ts");

@@ -72,5 +72,7 @@ function escapeHtml(value: string): string {
 }
 
 function serializeProps(props: unknown): string {
-  return JSON.stringify(props ?? null).replace(/</g, "\\u003c");
+  return JSON.stringify(props ?? null)
+    .replace(/</g, "\\u003c")
+    .replace(/'/g, "\\u0027");
 }

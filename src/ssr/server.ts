@@ -1,13 +1,13 @@
 import { createServer, type IncomingMessage, type Server } from "node:http";
 import { readFile, stat } from "node:fs/promises";
 import { extname, join } from "node:path";
-import { scanRoutes } from "../router/route-scanner";
-import { scanActions, actionNames } from "../action/scan";
-import { handleActionRequest } from "../action/server";
-import { getCachedHtml, setCachedHtml } from "../cache";
-import { matchApiRoute, matchRoute } from "./match";
-import { renderPage, renderErrorPage } from "./render";
-import { renderPageBody, renderStreamingPage } from "./stream";
+import { scanRoutes } from "../router/route-scanner.js";
+import { scanActions, actionNames } from "../action/scan.js";
+import { handleActionRequest } from "../action/server.js";
+import { getCachedHtml, setCachedHtml } from "../cache.js";
+import { matchApiRoute, matchRoute } from "./match.js";
+import { renderPage, renderErrorPage } from "./render.js";
+import { renderPageBody, renderStreamingPage, RouteNotFoundError } from "./stream.js";
 
 export interface SsrServerOptions {
   /** Absolute path to the app directory (e.g. /project/src/app). */
@@ -46,7 +46,8 @@ export async function createSsrServer(options: SsrServerOptions): Promise<SsrSer
   const publicActions = actionNames(actions);
 
   const resolveAction = async (name: string, page?: string) => {
-    const pageActions = page ? actions[page] : Object.values(actions).find((p) => p[name]) ?? undefined;
+    const pageKey = resolveActionPageKey(page, routes);
+    const pageActions = pageKey ? actions[pageKey] : Object.values(actions).find((p) => p[name]) ?? undefined;
     const actionPath = pageActions ? pageActions[name] : undefined;
     if (!actionPath) return undefined;
     const mod = (await import(actionPath)) as Record<string, unknown>;
@@ -92,6 +93,7 @@ export async function createSsrServer(options: SsrServerOptions): Promise<SsrSer
       const renderUrl = new URL(req.url ?? "/", "http://localhost");
       const page = renderUrl.searchParams.get("page") ?? "/";
       const search = renderUrl.searchParams.get("search") ?? "";
+      const wantsJson = (req.headers["accept"] ?? "").includes("application/json");
       try {
         const headers = new Headers();
         const contentType = req.headers["content-type"];
@@ -104,17 +106,58 @@ export async function createSsrServer(options: SsrServerOptions): Promise<SsrSer
           method: req.method,
           headers,
         });
-        const html = await renderPageBody({
-          routes,
-          pathname: page,
-          searchParams: new URLSearchParams(search),
-          config: { lang: options.lang ?? "es", clientEntry: options.clientEntry },
-          actions: publicActions,
-          request,
-        });
-        res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
-        res.end(html);
+
+        // ISR: cache the real content served by this endpoint when a cache
+        // directory is configured, so streamed pages regenerate on a TTL.
+        let body: string;
+        let title: string;
+        const ttl = await resolveTtl(options, page, routes);
+        const cacheKey = `/__nix-js/render${page}?${search}`;
+        if (options.cacheDir && typeof ttl === "number") {
+          const cached = await getCachedHtml(options.cacheDir, cacheKey);
+          if (cached) {
+            body = extractBody(cached.html);
+            title = extractTitle(cached.html);
+          } else {
+            const rendered = await renderPageBody({
+              routes,
+              pathname: page,
+              searchParams: new URLSearchParams(search),
+              config: { lang: options.lang ?? "es", clientEntry: options.clientEntry },
+              actions: publicActions,
+              request,
+            });
+            body = rendered.body;
+            title = rendered.title;
+            await setCachedHtml(options.cacheDir, cacheKey, rendered.fullHtml ?? "", ttl);
+          }
+        } else {
+          const rendered = await renderPageBody({
+            routes,
+            pathname: page,
+            searchParams: new URLSearchParams(search),
+            config: { lang: options.lang ?? "es", clientEntry: options.clientEntry },
+            actions: publicActions,
+            request,
+          });
+          body = rendered.body;
+          title = rendered.title;
+        }
+
+        if (wantsJson) {
+          res.writeHead(200, { "Content-Type": "application/json; charset=utf-8" });
+          res.end(JSON.stringify({ title, body }));
+        } else {
+          res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+          res.end(body);
+        }
       } catch (err) {
+        if (err instanceof RouteNotFoundError) {
+          console.log(`[ssr] render endpoint: no route for ${page}`);
+          res.writeHead(404, { "Content-Type": "text/plain" });
+          res.end("Not Found");
+          return;
+        }
         console.error("[ssr] streaming render error", err);
         res.writeHead(500, { "Content-Type": "text/plain" });
         res.end("Internal Server Error");
@@ -140,8 +183,10 @@ export async function createSsrServer(options: SsrServerOptions): Promise<SsrSer
         const headers = new Headers();
         const contentType = req.headers["content-type"];
         const accept = req.headers["accept"];
+        const cookie = req.headers["cookie"];
         if (contentType) headers.set("Content-Type", contentType);
         if (accept) headers.set("Accept", accept);
+        if (cookie) headers.set("Cookie", cookie);
         const request = new Request(`http://${req.headers.host ?? "localhost"}${req.url}`, {
           method: req.method,
           headers,
@@ -195,7 +240,7 @@ export async function createSsrServer(options: SsrServerOptions): Promise<SsrSer
           html = await renderStreamingPage({
             route: match.route,
             params: match.params,
-            searchParams: match.searchParams,
+            searchParams: new URLSearchParams(req.url?.split("?")[1] ?? ""),
             config,
             actions: publicActions,
             request,
@@ -208,7 +253,7 @@ export async function createSsrServer(options: SsrServerOptions): Promise<SsrSer
             const result = await renderPage({
               route: match.route,
               params: match.params,
-              searchParams: match.searchParams,
+              searchParams: new URLSearchParams(req.url?.split("?")[1] ?? ""),
               config,
               actions: publicActions,
               request,
@@ -220,7 +265,7 @@ export async function createSsrServer(options: SsrServerOptions): Promise<SsrSer
           html = (await renderPage({
             route: match.route,
             params: match.params,
-            searchParams: match.searchParams,
+            searchParams: new URLSearchParams(req.url?.split("?")[1] ?? ""),
             config,
             actions: publicActions,
             request,
@@ -351,4 +396,43 @@ function guessContentType(filePath: string): string {
     default:
       return "application/octet-stream";
   }
+}
+
+/**
+ * Maps a concrete page path (e.g. `/movies/inception`) to the route pattern
+ * key used by the action registry (e.g. `/movies/:slug`). Falls back to the
+ * path itself when it matches an exact registry key.
+ */
+export function resolveActionPageKey(
+  page: string | undefined,
+  routes: Awaited<ReturnType<typeof scanRoutes>>,
+): string | undefined {
+  if (!page) return undefined;
+  if (routes.pages.some((route) => route.path === page)) return page;
+  const match = matchRoute(page, routes.pages);
+  return match ? match.route.path : page;
+}
+
+/** Resolves the ISR TTL for a page: route `revalidate` or the default. */
+async function resolveTtl(
+  options: SsrServerOptions,
+  pathname: string,
+  routes: Awaited<ReturnType<typeof scanRoutes>>,
+): Promise<number | undefined> {
+  const match = matchRoute(pathname, routes.pages);
+  if (!match) return undefined;
+  const revalidate = match.route.dataPath
+    ? ((await import(match.route.dataPath)) as { revalidate?: number }).revalidate
+    : undefined;
+  return revalidate ?? options.defaultRevalidate;
+}
+
+function extractBody(fullHtml: string): string {
+  const match = fullHtml.match(/<div id="app">([\s\S]*)<\/div>\s*(<script|$)/);
+  return match ? match[1].trim() : fullHtml;
+}
+
+function extractTitle(fullHtml: string): string {
+  const match = fullHtml.match(/<title>([^<]*)<\/title>/);
+  return match ? match[1] : "";
 }

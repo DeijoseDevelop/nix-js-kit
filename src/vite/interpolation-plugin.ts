@@ -23,6 +23,305 @@ export interface InterpolationPluginOptions {
 const HTML_TAG = "html";
 const TEMPLATE_START = "`";
 
+/**
+ * Scans a `${...}` interpolation starting at `start` (where content[start] is
+ * `$` and content[start + 1] is `{`), honoring nested braces, strings and
+ * escape sequences. Returns the index just past the closing `}`.
+ */
+function scanInterpolation(content: string, start: number): number {
+  let depth = 1;
+  let i = start + 2;
+  while (i < content.length && depth > 0) {
+    const c = content[i];
+    if (c === "\\") {
+      i += 2;
+      continue;
+    }
+    if (c === '"' || c === "'" || c === "`") {
+      const q = c;
+      i++;
+      while (i < content.length) {
+        if (content[i] === "\\") {
+          i += 2;
+          continue;
+        }
+        if (content[i] === q) break;
+        i++;
+      }
+      i++;
+      continue;
+    }
+    if (c === "{") depth++;
+    else if (c === "}") depth--;
+    i++;
+  }
+  return i;
+}
+
+/**
+ * Scans a quoted attribute value starting at `start` (where content[start] is
+ * the quote character). Handles escapes, `${...}` interpolations with nested
+ * braces, and nested quotes. Returns the index just past the closing quote,
+ * the raw inner text (escapes preserved as in the source) and whether the
+ * value contains at least one interpolation.
+ */
+function scanQuotedValue(
+  content: string,
+  start: number,
+  quote: string,
+): { end: number; inside: string; hasInterp: boolean } {
+  let i = start + 1;
+  let inside = "";
+  let hasInterp = false;
+  while (i < content.length) {
+    const c = content[i];
+    if (c === "\\") {
+      inside += c + (content[i + 1] ?? "");
+      i += 2;
+      continue;
+    }
+    if (c === quote) {
+      i++;
+      break;
+    }
+    if (c === "$" && content[i + 1] === "{") {
+      const end = scanInterpolation(content, i);
+      inside += content.slice(i, end);
+      i = end;
+      hasInterp = true;
+      continue;
+    }
+    inside += c;
+    i++;
+  }
+  return { end: i, inside, hasInterp };
+}
+
+/**
+ * Converts the inner text of a quoted attribute value (which may contain
+ * `${...}` interpolations) into a JS expression. Literal parts are JSON
+ * encoded; interpolations keep their raw expression text.
+ *
+ * Examples:
+ *   /blog/${slug}     -> "/blog/" + (slug)
+ *   ${slug}           -> (slug)
+ *   tag ${cls({a:1})} -> "tag " + (cls({a:1}))
+ */
+function valueToExpression(value: string): string {
+  const parts: string[] = [];
+  let i = 0;
+  let literal = "";
+  const flush = () => {
+    if (literal) {
+      parts.push(JSON.stringify(unescapeAttributeLiteral(literal)));
+      literal = "";
+    }
+  };
+
+  while (i < value.length) {
+    if (value[i] === "\\") {
+      literal += value[i] + (value[i + 1] ?? "");
+      i += 2;
+      continue;
+    }
+    if (value[i] === "$" && value[i + 1] === "{") {
+      flush();
+      const end = scanInterpolation(value, i);
+      const expr = value.slice(i + 2, end - 1).trim();
+      if (expr) parts.push(`(${expr})`);
+      i = end;
+      continue;
+    }
+    literal += value[i];
+    i++;
+  }
+  flush();
+
+  if (parts.length === 0) return '""';
+  if (parts.length === 1) return parts[0] as string;
+  return parts.join(" + ");
+}
+
+/**
+ * Unescapes escape sequences that appear inside a JS template literal so the
+ * JSON.stringify output matches the runtime string value.
+ */
+function unescapeAttributeLiteral(literal: string): string {
+  const escapes: Record<string, string> = {
+    n: "\n",
+    t: "\t",
+    r: "\r",
+  };
+  let out = "";
+  let i = 0;
+  while (i < literal.length) {
+    const c = literal[i];
+    if (c === "\\" && i + 1 < literal.length) {
+      const next = literal[i + 1];
+      if (next in escapes) {
+        out += escapes[next];
+        i += 2;
+        continue;
+      }
+      out += next;
+      i += 2;
+      continue;
+    }
+    out += c;
+    i++;
+  }
+  return out;
+}
+
+/**
+ * Rewrites quoted attribute values that contain interpolations inside html``
+ * templates, leaving everything else untouched.
+ */
+function transformTemplateContent(content: string): string {
+  let out = "";
+  let i = 0;
+  const n = content.length;
+
+  while (i < n) {
+    const lt = content.indexOf("<", i);
+    if (lt === -1) {
+      out += content.slice(i);
+      break;
+    }
+    out += content.slice(i, lt);
+    i = lt;
+
+    // HTML comments: copy verbatim.
+    if (content.startsWith("<!--", i)) {
+      const end = content.indexOf("-->", i + 4);
+      if (end === -1) {
+        out += content.slice(i);
+        break;
+      }
+      out += content.slice(i, end + 3);
+      i = end + 3;
+      continue;
+    }
+
+    // Closing tags, doctype, CDATA, processing instructions: copy verbatim.
+    if (content[i + 1] === "/" || content[i + 1] === "!" || content[i + 1] === "?") {
+      const gt = content.indexOf(">", i + 1);
+      if (gt === -1) {
+        out += content.slice(i);
+        break;
+      }
+      out += content.slice(i, gt + 1);
+      i = gt + 1;
+      continue;
+    }
+
+    // Opening tag. Copy the tag name, then walk its attributes.
+    let j = i + 1;
+    while (j < n && /[a-zA-Z0-9-]/.test(content[j])) j++;
+    out += content.slice(i, j);
+    i = j;
+
+    while (i < n) {
+      let ws = "";
+      while (i < n && /\s/.test(content[i])) {
+        ws += content[i];
+        i++;
+      }
+      if (i >= n) {
+        out += ws;
+        break;
+      }
+      if (content[i] === ">") {
+        out += ws + ">";
+        i++;
+        break;
+      }
+      if (content[i] === "/" && content[i + 1] === ">") {
+        out += ws + "/>";
+        i += 2;
+        break;
+      }
+      // Interpolation in the tag body (dynamic attrs/spread): copy verbatim.
+      if (content[i] === "$" && content[i + 1] === "{") {
+        const end = scanInterpolation(content, i);
+        out += ws + content.slice(i, end);
+        i = end;
+        continue;
+      }
+
+      // Attribute name.
+      let nameStart = i;
+      while (i < n && !/[\s=/>"'$]/.test(content[i])) i++;
+      const name = content.slice(nameStart, i);
+      if (!name) {
+        out += ws + content[i];
+        i++;
+        continue;
+      }
+
+      let eqWs = "";
+      while (i < n && /\s/.test(content[i])) {
+        eqWs += content[i];
+        i++;
+      }
+
+      if (content[i] !== "=") {
+        out += ws + name + eqWs;
+        continue;
+      }
+
+      i++; // consume "="
+      let valWs = "";
+      while (i < n && /\s/.test(content[i])) {
+        valWs += content[i];
+        i++;
+      }
+
+      const quote = content[i];
+      if (quote === '"' || quote === "'") {
+        const { end, inside, hasInterp } = scanQuotedValue(content, i, quote);
+        if (hasInterp) {
+          // Skip values that are a single full interpolation: Nix.js handles
+          // `attr="${expr}"` natively, so only partial interpolations need the
+          // rewrite.
+          const first = scanInterpolation(inside, 0);
+          const fullValue =
+            inside.startsWith("${") &&
+            first === inside.length &&
+            !inside.slice(2, first - 1).includes("${");
+          if (!fullValue) {
+            // Nix.js needs the interpolation to start right after "=" (no space),
+            // so the whitespace before the original value is dropped.
+            out += ws + name + eqWs + "=" + "${" + valueToExpression(inside) + "}";
+            i = end;
+            continue;
+          }
+          out += ws + name + eqWs + "=" + valWs + content.slice(i, end);
+        } else {
+          out += ws + name + eqWs + "=" + valWs + content.slice(i, end);
+        }
+        i = end;
+        continue;
+      }
+
+      // Unquoted value: copy up to whitespace, ">" or "/>".
+      let v = "";
+      while (
+        i < n &&
+        !/\s/.test(content[i]) &&
+        content[i] !== ">" &&
+        !(content[i] === "/" && content[i + 1] === ">")
+      ) {
+        v += content[i];
+        i++;
+      }
+      out += ws + name + eqWs + "=" + valWs + v;
+    }
+  }
+
+  return out;
+}
+
 export function transformPartialInterpolations(source: string): string {
   let result = "";
   let i = 0;
@@ -67,15 +366,9 @@ export function transformPartialInterpolations(source: string): string {
       if (char === "$") {
         // Look ahead for ${...}
         if (source[i + 1] === "{") {
-          let braceDepth = 1;
-          let j = i + 2;
-          while (j < source.length && braceDepth > 0) {
-            if (source[j] === "{") braceDepth++;
-            if (source[j] === "}") braceDepth--;
-            j++;
-          }
-          templateContent += source.slice(i, j);
-          i = j;
+          const end = scanInterpolation(source, i);
+          templateContent += source.slice(i, end);
+          i = end;
           continue;
         }
       }
@@ -88,47 +381,6 @@ export function transformPartialInterpolations(source: string): string {
     result += TEMPLATE_START;
   }
   return result;
-}
-
-function transformTemplateContent(content: string): string {
-  // Match attribute values that contain at least one interpolation.
-  // We look for: attr="...${...}..." or attr='...${...}...'
-  const attrRegex = /(\s)([a-zA-Z@:][a-zA-Z0-9-@:]*)(\s*=\s*)(["'])([^"']*\$\{[^}]+\}[^"']*)\4/g;
-  return content.replace(attrRegex, (_match, leadingSpace, name, equals, _quote, value) => {
-    const expression = valueToExpression(value);
-    return `${leadingSpace}${name}${equals}\${${expression}}`;
-  });
-}
-
-function valueToExpression(value: string): string {
-  // Convert a quoted attribute value like /blog/${slug} into a JS expression.
-  // We split the value into literal parts and ${...} interpolations.
-  const parts: string[] = [];
-  let i = 0;
-  while (i < value.length) {
-    const interpolationStart = value.indexOf("${", i);
-    if (interpolationStart === -1) {
-      const literal = value.slice(i);
-      if (literal) parts.push(JSON.stringify(literal));
-      break;
-    }
-    const literal = value.slice(i, interpolationStart);
-    if (literal) parts.push(JSON.stringify(literal));
-    let braceDepth = 1;
-    let j = interpolationStart + 2;
-    while (j < value.length && braceDepth > 0) {
-      if (value[j] === "{") braceDepth++;
-      if (value[j] === "}") braceDepth--;
-      j++;
-    }
-    const expr = value.slice(interpolationStart + 2, j - 1);
-    if (expr.trim()) parts.push(`(${expr})`);
-    i = j;
-  }
-
-  if (parts.length === 0) return "\"\"";
-  if (parts.length === 1) return parts[0] as string;
-  return parts.join(" + ");
 }
 
 export function nixJsInterpolationPlugin(options: InterpolationPluginOptions = {}): Plugin {

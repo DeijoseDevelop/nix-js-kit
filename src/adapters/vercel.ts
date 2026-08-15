@@ -1,9 +1,9 @@
 import { mkdir, rename, rm, stat, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { build } from "vite";
-import { scanRoutes } from "../router/route-scanner";
-import type { Adapter } from "./index";
-import { copyStatic, writeSsrEntry } from "./shared";
+import { scanRoutes } from "../router/route-scanner.js";
+import type { Adapter } from "./index.js";
+import { copyStatic, writeSsrEntry } from "./shared.js";
 
 /**
  * Vercel adapter for nix-js-kit.
@@ -45,7 +45,7 @@ export const vercelAdapter: Adapter = {
     const routes = await scanRoutes(appDir);
 
     const entryPath = resolve(generatedDir, "vercel-index.ts");
-    await writeSsrEntry(entryPath, routes, options, appDir);
+    await writeSsrEntry(entryPath, routes, options);
 
     // Bundle the function entry.
     await build({

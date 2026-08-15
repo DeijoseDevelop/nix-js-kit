@@ -1,5 +1,3 @@
-import { cleanupHydratedIslands } from "../island/index.js";
-
 /**
  * Client-side router for Nix Kit.
  *
@@ -8,6 +6,11 @@ import { cleanupHydratedIslands } from "../island/index.js";
  * This is loaded as part of the client bundle instead of being inlined in
  * every HTML page.
  */
+
+interface RenderPayload {
+  title?: string;
+  body: string;
+}
 
 function isInternalLink(link: HTMLAnchorElement): boolean {
   return (
@@ -19,28 +22,49 @@ function isInternalLink(link: HTMLAnchorElement): boolean {
   );
 }
 
-async function navigate(path: string, push = true): Promise<boolean> {
+function hasModifier(event: MouseEvent): boolean {
+  return event.metaKey || event.ctrlKey || event.shiftKey || event.altKey;
+}
+
+/**
+ * Navigates to a page without a full reload: fetches the fresh body from the
+ * `/__nix-js/render` endpoint, swaps `#app`, updates the document title and
+ * dispatches `nix-js:rendered` so islands re-hydrate. Used by the router on
+ * clicks and available for programmatic navigation (e.g. after a server
+ * action returns a redirect, so the target page shows fresh server data).
+ *
+ * @param pathname Path without query, e.g. "/movies/inception".
+ * @param search Query string, e.g. "?reviewed=1" (optional).
+ * @param push Whether to push a history entry (default true).
+ * @returns true on success, false if the render failed.
+ */
+export async function navigateTo(pathname: string, search = "", push = true): Promise<boolean> {
   const url = new URL("/__nix-js/render", location.origin);
-  url.searchParams.set("page", path);
-  url.searchParams.set("search", location.search);
+  url.searchParams.set("page", pathname);
+  const current = new URL(location.href);
+  url.searchParams.set("search", search || current.search);
 
   let response: Response;
   try {
-    response = await fetch(url.toString(), { headers: { Accept: "text/html" } });
+    response = await fetch(url.toString(), { headers: { Accept: "application/json" } });
   } catch {
     return false;
   }
   if (!response.ok) return false;
 
-  const html = await response.text();
+  let payload: RenderPayload;
+  try {
+    payload = await response.json();
+  } catch {
+    return false;
+  }
+
   const app = document.getElementById("app");
   if (!app) return false;
 
-  cleanupHydratedIslands();
-  app.innerHTML = html;
-  const titleMatch = html.match(/<title>([^<]*)<\/title>/);
-  if (titleMatch) document.title = titleMatch[1];
-  if (push) history.pushState({ n: path }, "", path + location.search);
+  app.innerHTML = payload.body;
+  if (payload.title) document.title = payload.title;
+  if (push) history.pushState({ n: pathname }, "", pathname + (search || current.search));
   window.scrollTo(0, 0);
   document.dispatchEvent(new CustomEvent("nix-js:rendered"));
   return true;
@@ -48,20 +72,29 @@ async function navigate(path: string, push = true): Promise<boolean> {
 
 export function startClientRouter(): void {
   document.addEventListener("click", async (event) => {
+    if (!(event instanceof MouseEvent) || hasModifier(event)) return;
+    if (event.defaultPrevented) return;
     const link = (event.target as HTMLElement).closest("a");
     if (!link || !isInternalLink(link as HTMLAnchorElement)) return;
 
     const href = link.getAttribute("href");
     if (!href || href.startsWith("#") || href.startsWith("mailto:") || href.startsWith("javascript:")) return;
-    if (event.ctrlKey || event.metaKey || event.shiftKey) return;
 
     event.preventDefault();
-    if (!(await navigate(href))) {
-      location.assign(href + location.search);
+    const qIndex = href.indexOf("?");
+    const path = qIndex === -1 ? href : href.slice(0, qIndex);
+    const search = qIndex === -1 ? "" : href.slice(qIndex);
+    if (!(await navigateTo(path, search))) {
+      location.assign(href);
     }
   });
 
   window.addEventListener("popstate", (event) => {
-    navigate((event.state && (event.state as { n?: string }).n) || location.pathname, false);
+    const state = (event.state && (event.state as { n?: string }).n) || undefined;
+    if (state) {
+      void navigateTo(state, "", false);
+    } else {
+      void navigateTo(location.pathname, location.search, false);
+    }
   });
 }

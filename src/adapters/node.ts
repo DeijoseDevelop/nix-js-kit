@@ -1,9 +1,9 @@
 import { mkdir, rm, stat, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { build } from "vite";
-import { scanRoutes } from "../router/route-scanner";
-import type { Adapter } from "./index";
-import { writeSsrEntry } from "./shared";
+import { scanRoutes } from "../router/route-scanner.js";
+import type { Adapter } from "./index.js";
+import { writeSsrEntry } from "./shared.js";
 
 /**
  * Node adapter for nix-js-kit.
@@ -39,7 +39,7 @@ export const nodeAdapter: Adapter = {
     const routes = await scanRoutes(appDir);
 
     const entryPath = resolve(generatedDir, "node-index.ts");
-    await writeSsrEntry(entryPath, routes, options, appDir);
+    await writeSsrEntry(entryPath, routes, options);
 
     const serverPath = resolve(generatedDir, "node-server.ts");
     await writeFile(
