@@ -25,6 +25,12 @@ export interface ShellOptions {
    * applying a stored theme before the page becomes visible).
    */
   headScripts?: string[];
+  /**
+   * Raw HTML strings injected into `<head>` — e.g. `<link rel="icon">`,
+   * `<link rel="manifest">`, `<meta name="theme-color">`. Each string is
+   * rendered as-is inside `<head>`.
+   */
+  headLinks?: string[];
   /** Loader data serialized into `<script id="nix-js-data">`. */
   data?: unknown;
   /** Per-page action names serialized into `<script id="nix-js-actions">`. */
@@ -115,7 +121,7 @@ export function buildHeadTags(metadata: PageMetadata, fallbackTitle: string): st
 
 /** Wraps rendered body HTML into a full HTML document. */
 export function documentShell(opts: ShellOptions): string {
-  const { body, title = "Nix.js Kit App", lang = "es", data, actions, clientEntry, htmlAttributes, headScripts, metadata } = opts;
+  const { body, title = "Nix.js Kit App", lang = "es", data, actions, clientEntry, htmlAttributes, headScripts, headLinks, metadata } = opts;
 
   const dataScript =
     data !== undefined
@@ -156,11 +162,18 @@ export function documentShell(opts: ShellOptions): string {
     ? "" // already emitted by buildHeadTags
     : `\n    <title>${escapeHtml(title)}</title>`;
 
+  const headLinksHtml = headLinks
+    ? headLinks
+      .filter((link) => typeof link === "string" && link.trim().length > 0)
+      .map((link) => `\n    ${link}`)
+      .join("")
+    : "";
+
   return `<!DOCTYPE html>
 <html lang="${escapeHtml(lang)}"${htmlAttrs}>
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />${titleTag}${headTags}${headScriptsHtml}
+    <meta name="viewport" content="width=device-width, initial-scale=1" />${titleTag}${headTags}${headLinksHtml}${headScriptsHtml}
   </head>
   <body>
     <div id="app">${body}</div>${dataScript}${actionsScript}${entryScript}

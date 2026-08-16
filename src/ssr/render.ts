@@ -44,21 +44,25 @@ const defaultImport = (path: string) => import(path);
 export function collectShellExtras(
   pageData: unknown,
   layoutDataList: unknown[],
-): { htmlAttributes: Record<string, string>; headScripts: string[] } {
+): { htmlAttributes: Record<string, string>; headScripts: string[]; headLinks: string[] } {
   const htmlAttributes: Record<string, string> = {};
   const headScripts: string[] = [];
+  const headLinks: string[] = [];
   const merge = (value: unknown) => {
     if (!value || typeof value !== "object") return;
     const attrs = (value as { htmlAttributes?: Record<string, string> }).htmlAttributes;
     if (attrs) Object.assign(htmlAttributes, attrs);
     const scripts = (value as { headScripts?: string[] }).headScripts;
     if (Array.isArray(scripts)) headScripts.push(...scripts);
+    const links = (value as { headLinks?: string[] }).headLinks;
+    if (Array.isArray(links)) headLinks.push(...links);
   };
   for (const layoutData of layoutDataList) merge(layoutData);
   merge(pageData);
-  // Deduplicate headScripts (e.g. anti-flash theme script from both layout and page data)
+  // Deduplicate headScripts and headLinks (e.g. from both layout and page data)
   const uniqueScripts = [...new Set(headScripts)];
-  return { htmlAttributes, headScripts: uniqueScripts };
+  const uniqueLinks = [...new Set(headLinks)];
+  return { htmlAttributes, headScripts: uniqueScripts, headLinks: uniqueLinks };
 }
 
 export async function renderPage(options: RenderPageOptions): Promise<RenderPageResult> {
@@ -136,7 +140,7 @@ export async function renderPage(options: RenderPageOptions): Promise<RenderPage
     ? String((data as { title?: unknown }).title ?? "Nix.js Kit")
     : "Nix.js Kit";
 
-  const { htmlAttributes, headScripts } = collectShellExtras(data, layoutDataList);
+  const { htmlAttributes, headScripts, headLinks } = collectShellExtras(data, layoutDataList);
 
   // Resolve page metadata. Priority: `generateMetadata` from page.ts > `metadata`
   // field in the page loader data > `metadata` field in layout loader data.
@@ -158,6 +162,7 @@ export async function renderPage(options: RenderPageOptions): Promise<RenderPage
     actions,
     htmlAttributes,
     headScripts,
+    headLinks,
     metadata,
     clientEntry: config.clientEntry,
   });

@@ -74,6 +74,7 @@ export async function renderStreamingPage(options: StreamingPageOptions): Promis
   // before the real content arrives.
   const htmlAttributes: Record<string, string> = {};
   const headScripts: string[] = [];
+  const headLinks: string[] = [];
   if (route.layouts.length > 0) {
     const rootLayout = route.layouts[0];
     const dataPath = rootLayout.replace(/layout\.ts$/, "layout.data.ts");
@@ -86,6 +87,8 @@ export async function renderStreamingPage(options: StreamingPageOptions): Promis
           if (attrs) Object.assign(htmlAttributes, attrs);
           const scripts = (layoutData as { headScripts?: string[] }).headScripts;
           if (Array.isArray(scripts)) headScripts.push(...scripts);
+          const links = (layoutData as { headLinks?: string[] }).headLinks;
+          if (Array.isArray(links)) headLinks.push(...links);
         }
       } catch {
         // The root layout loader is optional; ignore failures here.
@@ -101,6 +104,7 @@ export async function renderStreamingPage(options: StreamingPageOptions): Promis
     actions,
     htmlAttributes,
     headScripts,
+    headLinks,
     clientEntry: config.clientEntry,
   });
 }

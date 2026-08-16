@@ -2,6 +2,12 @@
 
 All notable changes to `@deijose/nix-js-kit` will be documented in this file.
 
+## 1.4.5
+
+### Added
+
+- **`headLinks` support in data loaders** — loaders can now return a `headLinks: string[]` array of raw HTML strings (e.g. `<link rel="icon">`, `<link rel="manifest">`, `<meta name="theme-color">`) that are injected directly into `<head>`, alongside the existing `headScripts`. Deduplicated across layout and page data.
+
 ## 1.4.4
 
 ### Fixed
