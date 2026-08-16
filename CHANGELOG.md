@@ -2,6 +2,12 @@
 
 All notable changes to `@deijose/nix-js-kit` will be documented in this file.
 
+## 1.4.3
+
+### Fixed
+
+- **Pinned `@deijose/nix-js` to 2.6.0** — fixed a build error on Vercel where `^2.5.3` resolved to a newer version that no longer exports `_setSSR`.
+
 ## 1.4.2
 
 ### Fixed
