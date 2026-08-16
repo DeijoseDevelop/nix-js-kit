@@ -140,7 +140,14 @@ export function documentShell(opts: ShellOptions): string {
   const headScriptsHtml = headScripts
     ? headScripts
       .filter((script) => typeof script === "string" && script.trim().length > 0)
-      .map((script) => `\n    <script>${script.replace(/<\/script>/gi, "<\\/script>")}</script>`)
+      .map((script) => {
+        // If the script is already a complete <script> tag (e.g. JSON-LD),
+        // render it as-is without wrapping.
+        if (script.trimStart().startsWith("<script")) {
+          return `\n    ${script}`;
+        }
+        return `\n    <script>${script.replace(/<\/script>/gi, "<\\/script>")}</script>`;
+      })
       .join("")
     : "";
 

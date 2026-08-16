@@ -2,6 +2,12 @@
 
 All notable changes to `@deijose/nix-js-kit` will be documented in this file.
 
+## 1.4.1
+
+### Fixed
+
+- **JSON-LD in headScripts** — `documentShell` now detects when a `headScript` is already a complete `<script>` tag (e.g. `<script type="application/ld+json">...`) and renders it as-is instead of wrapping it in another `<script>` tag.
+
 ## 1.4.0
 
 ### Added
