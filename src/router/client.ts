@@ -22,6 +22,12 @@ interface RenderPayload {
   head?: string;
 }
 
+/**
+ * Whether the `/__nix-js/render` endpoint has been detected. Once a fetch to
+ * it fails (static deployment), we switch to HTML-based navigation entirely.
+ */
+let renderEndpointAvailable = true;
+
 function isInternalLink(link: HTMLAnchorElement): boolean {
   return (
     link.tagName === "A" &&
@@ -73,12 +79,38 @@ function setCached(key: string, payload: RenderPayload): void {
 /**
  * Fetches the render payload for a path. Uses the prefetch cache when fresh.
  * Stores the result in the cache for subsequent navigations.
+ *
+ * On static deployments (no `/__nix-js/render` endpoint), falls back to
+ * fetching the full HTML page and extracting `#app` + `<head>` tags.
  */
 async function fetchPayload(pathname: string, search: string): Promise<RenderPayload | undefined> {
   const key = cacheKey(pathname, search);
   const cached = getCached(key);
   if (cached) return cached;
 
+  // Try the SSR render endpoint first (dev mode + SSR/adapter deployments).
+  if (renderEndpointAvailable) {
+    const payload = await fetchFromRenderEndpoint(pathname, search);
+    if (payload) {
+      setCached(key, payload);
+      return payload;
+    }
+    // If the endpoint returned 404, mark it as unavailable and fall through
+    // to the HTML-based fetch. This happens on static deployments (Vercel
+    // with outputDirectory: dist, Netlify static, GitHub Pages, etc.).
+    renderEndpointAvailable = false;
+  }
+
+  // Static fallback: fetch the full HTML page and extract #app + head.
+  const payload = await fetchFromHtml(pathname, search);
+  if (payload) {
+    setCached(key, payload);
+  }
+  return payload;
+}
+
+/** Attempts to fetch from the `/__nix-js/render` JSON endpoint. */
+async function fetchFromRenderEndpoint(pathname: string, search: string): Promise<RenderPayload | undefined> {
   const url = new URL("/__nix-js/render", location.origin);
   url.searchParams.set("page", pathname);
   const current = new URL(location.href);
@@ -98,9 +130,60 @@ async function fetchPayload(pathname: string, search: string): Promise<RenderPay
   } catch {
     return undefined;
   }
-
-  setCached(key, payload);
   return payload;
+}
+
+/**
+ * Static-mode fallback: fetches the full HTML page for the path and extracts
+ * the `#app` innerHTML plus managed `<head>` tags (`[data-nix-js-head]`).
+ * Also extracts `<title>`, stylesheets, and headLinks for SPA navigation.
+ */
+async function fetchFromHtml(pathname: string, search: string): Promise<RenderPayload | undefined> {
+  const fullUrl = pathname + (search || "");
+  let response: Response;
+  try {
+    response = await fetch(fullUrl, { headers: { Accept: "text/html" } });
+  } catch {
+    return undefined;
+  }
+  if (!response.ok) return undefined;
+
+  let html: string;
+  try {
+    html = await response.text();
+  } catch {
+    return undefined;
+  }
+
+  // Parse the full HTML document.
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(html, "text/html");
+
+  // Extract #app innerHTML — this is the page body.
+  const appEl = doc.getElementById("app");
+  if (!appEl) return undefined;
+  const body = appEl.innerHTML;
+
+  // Extract managed head tags (data-nix-js-head) for mergeHead.
+  const headTags = doc.querySelectorAll("[data-nix-js-head]");
+  let head = "";
+  for (const tag of headTags) {
+    head += tag.outerHTML;
+  }
+
+  // Also extract headLinks (favicons, manifest, theme-color) so they persist.
+  // These don't have data-nix-js-head, so we grab them separately.
+  const linkTags = doc.head.querySelectorAll("link[rel='icon'], link[rel='apple-touch-icon'], link[rel='manifest'], meta[name='theme-color']");
+  for (const tag of linkTags) {
+    // Skip if already in the current document head
+    const href = tag.getAttribute("href");
+    if (href && document.head.querySelector(`link[href="${href}"]`)) continue;
+    head += tag.outerHTML;
+  }
+
+  const title = doc.querySelector("title")?.textContent ?? undefined;
+
+  return { body, head, title };
 }
 
 /**

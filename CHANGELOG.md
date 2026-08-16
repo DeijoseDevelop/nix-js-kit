@@ -2,6 +2,12 @@
 
 All notable changes to `@deijose/nix-js-kit` will be documented in this file.
 
+## 1.4.6
+
+### Fixed
+
+- **SPA router now works on static deployments** — when the `/__nix-js/render` endpoint is unavailable (Vercel static, Netlify static, GitHub Pages), the router falls back to fetching the full HTML page and extracting `#app` + `<head>` tags. This enables SPA navigation without a server, matching the dev-mode experience.
+
 ## 1.4.5
 
 ### Added
