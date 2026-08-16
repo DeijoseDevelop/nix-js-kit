@@ -2,6 +2,13 @@
 
 All notable changes to `@deijose/nix-js-kit` will be documented in this file.
 
+## 1.4.2
+
+### Fixed
+
+- **Hash link navigation** — the SPA router now handles `#anchor` links with smooth scroll instead of ignoring them or reloading the page.
+- **Scrollable element preservation** — elements marked with `data-scroll-preserve="key"` have their scroll position saved and restored across SPA navigations, preventing sidebar scroll resets.
+
 ## 1.4.1
 
 ### Fixed

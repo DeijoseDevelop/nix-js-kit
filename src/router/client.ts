@@ -203,6 +203,12 @@ export async function navigateTo(pathname: string, search = "", push = true): Pr
 
   const current = new URL(location.href);
   const doSwap = () => {
+    // Save scroll positions of scrollable elements (e.g. sidebar) before swap
+    const scrollables: { el: Element; top: number }[] = [];
+    app.querySelectorAll("[data-scroll-preserve]").forEach((el) => {
+      scrollables.push({ el, top: el.scrollTop });
+    });
+
     // Hoist any stylesheets from the current #app content to <head> before
     // the swap, so they persist and don't cause a flash.
     hoistStyles(app);
@@ -224,6 +230,13 @@ export async function navigateTo(pathname: string, search = "", push = true): Pr
     }
     const savedScroll = push ? 0 : (history.state?.scroll ?? 0);
     window.scrollTo(0, savedScroll);
+
+    // Restore scroll positions of preserved elements
+    for (const s of scrollables) {
+      const newEl = app.querySelector(`[data-scroll-preserve="${s.el.getAttribute("data-scroll-preserve")}"]`);
+      if (newEl) newEl.scrollTop = s.top;
+    }
+
     document.dispatchEvent(new CustomEvent("nix-js:rendered"));
   };
 
@@ -346,7 +359,20 @@ export function startClientRouter(): void {
     if (!link || !isInternalLink(link as HTMLAnchorElement)) return;
 
     const href = link.getAttribute("href");
-    if (!href || href.startsWith("#") || href.startsWith("mailto:") || href.startsWith("javascript:")) return;
+    if (!href || href.startsWith("mailto:") || href.startsWith("javascript:")) return;
+
+    // Handle hash links: scroll to the element if it exists on the page
+    if (href.startsWith("#")) {
+      if (href.length > 1) {
+        const target = document.getElementById(href.slice(1));
+        if (target) {
+          event.preventDefault();
+          target.scrollIntoView({ behavior: "smooth", block: "start" });
+          history.replaceState(null, "", href);
+        }
+      }
+      return;
+    }
 
     event.preventDefault();
     const qIndex = href.indexOf("?");
