@@ -32,6 +32,7 @@ export default defineConfig({
                 "router/client": resolve("src/router/client.ts"),
                 "content/index": resolve("src/content/index.ts"),
                 "image/index": resolve("src/image/index.ts"),
+                "seo/index": resolve("src/seo/index.ts"),
             },
             name: "NixJSKit",
             formats: ["es", "cjs"],

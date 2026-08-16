@@ -33,6 +33,7 @@
         "src/image/pipeline.ts",
         "src/middleware/index.ts",
         "src/middleware/stream-boundary.ts",
+        "src/seo/index.ts",
         "src/cli.ts"
     ],
     "exclude": [

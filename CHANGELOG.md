@@ -2,6 +2,16 @@
 
 All notable changes to `@deijose/nix-js-kit` will be documented in this file.
 
+## 1.4.0
+
+### Added
+
+- **SEO module** (`@deijose/nix-js-kit/seo`) — sitemap.xml, robots.txt, and JSON-LD structured data generation:
+  - `generateSitemap({ siteUrl, urls, outDir })` writes a valid `sitemap.xml` from a list of URL entries (supports `lastmod`, `changefreq`, `priority`).
+  - `generateRobots({ siteUrl, outDir, rules?, disallow? })` writes a `robots.txt` with per-user-agent rules and automatic sitemap reference.
+  - `jsonLd(schema)` serializes Schema.org structured data into a `<script type="application/ld+json">` tag for rich snippets.
+  - Full TypeScript types for all config objects.
+
 ## 1.3.1
 
 ### Fixed
