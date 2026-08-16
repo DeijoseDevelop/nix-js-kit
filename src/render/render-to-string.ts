@@ -1,5 +1,5 @@
 import type { NixTemplate } from "@deijose/nix-js";
-import { _setSSR } from "@deijose/nix-js";
+import { setSSR } from "./ssr-flag";
 
 // =============================================================================
 // --- Build-time / server rendering ---
@@ -53,7 +53,7 @@ export async function renderToString(
   // SSR mode: effects run a single pass without subscribing, so async work
   // (e.g. nix-query fetches) that resolves after teardown never re-renders
   // into a DOM that no longer exists.
-  _setSSR(true);
+  setSSR(true);
   try {
     const template = factory();
     const container = window.document.createElement("div");
@@ -64,7 +64,7 @@ export async function renderToString(
     if (typeof dispose === "function") dispose();
     return html;
   } finally {
-    _setSSR(false);
+    setSSR(false);
     for (const key of MANAGED_GLOBALS) {
       g[key] = saved[key];
     }

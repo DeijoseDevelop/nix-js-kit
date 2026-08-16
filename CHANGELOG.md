@@ -2,6 +2,12 @@
 
 All notable changes to `@deijose/nix-js-kit` will be documented in this file.
 
+## 1.4.4
+
+### Fixed
+
+- **Removed dependency on `_setSSR` from `@deijose/nix-js`** — the published 2.6.0 on npm does not export `_setSSR`/`_isSSR`. The kit now manipulates the reactivity state's `ssr` flag directly via a local `setSSR()` utility in `src/render/ssr-flag.ts`. This fixes the Vercel build error: `SyntaxError: Export named '_setSSR' not found`.
+
 ## 1.4.3
 
 ### Fixed
