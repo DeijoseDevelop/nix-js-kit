@@ -136,6 +136,44 @@ function supportsViewTransitions(): boolean {
 // =============================================================================
 
 /**
+ * Hoists `<link rel="stylesheet">` and `<style>` tags from inside `#app` into
+ * `<head>` so they persist across SPA navigations (prevents FOUC/flashing).
+ * Deduplicates by `href` for links and by text content for styles.
+ */
+export function hoistStyles(container: ParentNode): void {
+  const links = container.querySelectorAll<HTMLLinkElement>('link[rel="stylesheet"]');
+  for (const link of links) {
+    const href = link.getAttribute("href");
+    if (!href) continue;
+    // Already in <head>?
+    const existing = document.head.querySelector(`link[rel="stylesheet"][href="${href}"]`);
+    if (existing) {
+      link.remove();
+      continue;
+    }
+    // Mark as hoisted so we can clean up later if needed
+    link.setAttribute("data-nix-js-hoisted", "");
+    document.head.appendChild(link);
+  }
+
+  const styles = container.querySelectorAll<HTMLStyleElement>("style");
+  for (const style of styles) {
+    const text = style.textContent?.trim();
+    if (!text) continue;
+    // Check if an identical style already exists in <head>
+    const existing = Array.from(document.head.querySelectorAll("style")).find(
+      (s) => s.textContent?.trim() === text,
+    );
+    if (existing) {
+      style.remove();
+      continue;
+    }
+    style.setAttribute("data-nix-js-hoisted", "");
+    document.head.appendChild(style);
+  }
+}
+
+/**
  * Navigates to a page without a full reload: fetches the fresh body from the
  * `/__nix-js/render` endpoint, swaps `#app`, updates the document title and
  * dispatches `nix-js:rendered` so islands re-hydrate. Used by the router on
@@ -165,7 +203,18 @@ export async function navigateTo(pathname: string, search = "", push = true): Pr
 
   const current = new URL(location.href);
   const doSwap = () => {
-    app.innerHTML = payload.body;
+    // Hoist any stylesheets from the current #app content to <head> before
+    // the swap, so they persist and don't cause a flash.
+    hoistStyles(app);
+
+    // Parse the new body and hoist its styles before injecting, so the
+    // browser never sees a frame without styles.
+    const temp = document.createElement("template");
+    temp.innerHTML = payload.body;
+    hoistStyles(temp.content as unknown as HTMLElement);
+
+    // Inject the remaining body (styles already moved to <head>)
+    app.innerHTML = temp.innerHTML;
     mergeHead(payload.head, payload.title);
     if (payload.clearActionErrorCookie) {
       document.cookie = payload.clearActionErrorCookie;
@@ -285,6 +334,11 @@ function setupLinkPrefetch(): void {
 // =============================================================================
 
 export function startClientRouter(): void {
+  // Hoist styles from #app to <head> immediately on page load.
+  // This prevents FOUC on the first SPA navigation.
+  const app = document.getElementById("app");
+  if (app) hoistStyles(app);
+
   document.addEventListener("click", async (event) => {
     if (!(event instanceof MouseEvent) || hasModifier(event)) return;
     if (event.defaultPrevented) return;

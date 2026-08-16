@@ -56,7 +56,9 @@ export function collectShellExtras(
   };
   for (const layoutData of layoutDataList) merge(layoutData);
   merge(pageData);
-  return { htmlAttributes, headScripts };
+  // Deduplicate headScripts (e.g. anti-flash theme script from both layout and page data)
+  const uniqueScripts = [...new Set(headScripts)];
+  return { htmlAttributes, headScripts: uniqueScripts };
 }
 
 export async function renderPage(options: RenderPageOptions): Promise<RenderPageResult> {

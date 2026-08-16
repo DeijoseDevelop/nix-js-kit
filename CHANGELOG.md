@@ -2,6 +2,13 @@
 
 All notable changes to `@deijose/nix-js-kit` will be documented in this file.
 
+## 1.3.1
+
+### Fixed
+
+- **SPA router FOUC fix** — stylesheets (`<link rel="stylesheet">`) and `<style>` tags rendered inside `#app` by layouts are now hoisted to `<head>` on page load and before every SPA navigation, preventing flash-of-unstyled-content on route changes.
+- **`headScripts` deduplication** — `collectShellExtras()` now deduplicates `headScripts` from page and layout data, preventing duplicate inline scripts (e.g. anti-flash theme scripts) when both layers emit the same script.
+
 ## 1.3.0
 
 ### Added
