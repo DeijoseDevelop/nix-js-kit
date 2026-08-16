@@ -11,7 +11,7 @@ export interface RenderPageOptions {
   route: PageRoute;
   params?: RouteParams;
   searchParams?: URLSearchParams;
-  config: Pick<BuildConfig, "lang" | "clientEntry">;
+  config: Pick<BuildConfig, "lang" | "clientEntry" | "renderEndpoint">;
   /** Custom module loader. Defaults to native dynamic import. */
   importer?: (path: string) => Promise<unknown>;
   /** Per-page action names exposed in the HTML shell. */
@@ -165,6 +165,7 @@ export async function renderPage(options: RenderPageOptions): Promise<RenderPage
     headLinks,
     metadata,
     clientEntry: config.clientEntry,
+    renderEndpoint: config.renderEndpoint,
   });
 
   const head = metadata ? buildHeadTags(metadata, resolvedTitle) : "";
@@ -193,7 +194,7 @@ export interface RenderErrorPageOptions {
   routes: ScannedRoutes;
   status: 404 | 500;
   error?: unknown;
-  config: Pick<BuildConfig, "lang" | "clientEntry">;
+  config: Pick<BuildConfig, "lang" | "clientEntry" | "renderEndpoint">;
   actions?: Record<string, string[]>;
   importer?: (path: string) => Promise<unknown>;
 }

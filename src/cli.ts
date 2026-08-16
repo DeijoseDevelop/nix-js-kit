@@ -619,6 +619,16 @@ async function handleRequest(
   try {
     const data = await readFile(filePath);
     const contentType = guessContentType(filePath);
+    if (noCache && contentType.includes("text/html")) {
+      // Dev mode: strip the render-endpoint marker so the client router uses
+      // the (live) `/__nix-js/render` endpoint for fast SPA navigation.
+      const stripped = data
+        .toString("utf8")
+        .replace('<meta name="nix-js:render-endpoint" content="off" />', "");
+      res.writeHead(200, cacheHeaders({ "Content-Type": contentType }));
+      res.end(stripped);
+      return;
+    }
     res.writeHead(200, cacheHeaders({ "Content-Type": contentType }));
     res.end(data);
     return;

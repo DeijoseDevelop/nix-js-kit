@@ -57,6 +57,13 @@ export interface BuildConfig {
   publicDir?: string;
   /** Image formats to generate when sharp is available. Defaults to ["webp", "avif"]. */
   imageFormats?: ImageFormat[];
+  /**
+   * Whether the SSR render endpoint (`/__nix-js/render`) exists at runtime.
+   * Defaults to `true` (dev, preview and SSR deployments). Set to `false` for
+   * fully static outputs so the emitted HTML tells the client router to skip
+   * the endpoint (no 404 storms on static hosts like Vercel).
+   */
+  renderEndpoint?: boolean;
 }
 
 export interface BuildResult {
@@ -148,7 +155,7 @@ export async function build(config: BuildConfig): Promise<BuildResult> {
   }
 
   // Generate static 404 and 500 error pages when they exist.
-  const errorConfig = { lang: config.lang, clientEntry: config.clientEntry };
+  const errorConfig = { lang: config.lang, clientEntry: config.clientEntry, renderEndpoint: false };
   if (routes.error404) {
     const result404 = await renderErrorPage({
       routes,
@@ -236,7 +243,7 @@ async function buildConcretePage(
     route,
     params,
     searchParams: new URLSearchParams(),
-    config: { lang: config.lang, clientEntry: config.clientEntry },
+    config: { lang: config.lang, clientEntry: config.clientEntry, renderEndpoint: false },
     actions,
   });
 

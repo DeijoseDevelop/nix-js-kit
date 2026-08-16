@@ -9,7 +9,7 @@
  * Features:
  * - SPA navigation with head merge (title, meta, OG tags)
  * - Scroll restoration on back/forward
- * - Prefetch on viewport intersection and hover/focus (Astro-style)
+ * - Prefetch on hover/focus (Astro-style), with opt-in viewport prefetch
  * - View Transitions API with `prefers-reduced-motion` respect
  */
 
@@ -23,10 +23,37 @@ interface RenderPayload {
 }
 
 /**
- * Whether the `/__nix-js/render` endpoint has been detected. Once a fetch to
- * it fails (static deployment), we switch to HTML-based navigation entirely.
+ * Whether the `/__nix-js/render` endpoint has been detected. Static builds emit
+ * `<meta name="nix-js:render-endpoint" content="off">` so this starts as
+ * `false` with zero probe requests. For older builds, a single shared probe
+ * determines availability so concurrent prefetches never storm the endpoint.
  */
 let renderEndpointAvailable = true;
+
+/** Shared in-flight probe promise; at most one request hits the endpoint. */
+let endpointProbe: Promise<boolean> | null = null;
+
+/** Resolves endpoint availability, caching the result for the page lifetime. */
+function resolveEndpointAvailability(): Promise<boolean> {
+  if (!renderEndpointAvailable) return Promise.resolve(false);
+  if (!endpointProbe) {
+    endpointProbe = (async () => {
+      const url = new URL("/__nix-js/render", location.origin);
+      url.searchParams.set("page", "/");
+      try {
+        const response = await fetch(url.toString(), {
+          headers: { Accept: "application/json" },
+        });
+        renderEndpointAvailable = response.ok;
+        return response.ok;
+      } catch {
+        renderEndpointAvailable = false;
+        return false;
+      }
+    })();
+  }
+  return endpointProbe;
+}
 
 function isInternalLink(link: HTMLAnchorElement): boolean {
   return (
@@ -88,17 +115,18 @@ async function fetchPayload(pathname: string, search: string): Promise<RenderPay
   const cached = getCached(key);
   if (cached) return cached;
 
-  // Try the SSR render endpoint first (dev mode + SSR/adapter deployments).
+  // Wait on the shared probe so concurrent prefetches generate at most ONE
+  // request against the endpoint (the rest go straight to the HTML fallback).
   if (renderEndpointAvailable) {
-    const payload = await fetchFromRenderEndpoint(pathname, search);
-    if (payload) {
-      setCached(key, payload);
-      return payload;
+    if (await resolveEndpointAvailability()) {
+      const payload = await fetchFromRenderEndpoint(pathname, search);
+      if (payload) {
+        setCached(key, payload);
+        return payload;
+      }
+      // The endpoint exists but couldn't render this specific page — fall
+      // through to the HTML-based fetch without disabling it globally.
     }
-    // If the endpoint returned 404, mark it as unavailable and fall through
-    // to the HTML-based fetch. This happens on static deployments (Vercel
-    // with outputDirectory: dist, Netlify static, GitHub Pages, etc.).
-    renderEndpointAvailable = false;
   }
 
   // Static fallback: fetch the full HTML page and extract #app + head.
@@ -365,54 +393,61 @@ function mergeHead(head: string | undefined, fallbackTitle: string | undefined):
 // --- Link prefetch observers ---
 // =============================================================================
 
-/** Set of links currently being observed for viewport prefetch. */
+/** Set of links currently being observed for prefetch. */
 const observedLinks = new WeakSet<HTMLAnchorElement>();
 
 /**
- * Sets up prefetch on visible internal links. Uses IntersectionObserver to
- * prefetch when a link enters the viewport. Also prefetches on hover/focus
- * for instant navigation on interaction.
+ * Sets up prefetch on internal links. Default is interaction-only (hover or
+ * focus) — the same behavior as Astro — so a page load never fires a burst of
+ * fetches for every link in the viewport. Links can opt into viewport
+ * prefetching with `data-prefetch="viewport"`.
  */
 function setupLinkPrefetch(): void {
-  if (!("IntersectionObserver" in window)) return;
+  const linkInfo = (link: HTMLAnchorElement) => {
+    const href = link.getAttribute("href");
+    if (!href || href.startsWith("#") || href.startsWith("mailto:") || href.startsWith("javascript:")) {
+      return null;
+    }
+    const qIndex = href.indexOf("?");
+    return {
+      path: qIndex === -1 ? href : href.slice(0, qIndex),
+      search: qIndex === -1 ? "" : href.slice(qIndex),
+    };
+  };
 
-  const observer = new IntersectionObserver(
-    (entries) => {
-      for (const entry of entries) {
-        if (!entry.isIntersecting) continue;
-        const link = entry.target as HTMLAnchorElement;
-        if (!isInternalLink(link) || link.hasAttribute("data-no-prefetch")) continue;
-        const href = link.getAttribute("href");
-        if (!href || href.startsWith("#") || href.startsWith("mailto:")) continue;
-        const qIndex = href.indexOf("?");
-        const path = qIndex === -1 ? href : href.slice(0, qIndex);
-        const search = qIndex === -1 ? "" : href.slice(qIndex);
-        void prefetch(path, search);
-        observer.unobserve(link);
-      }
-    },
-    { rootMargin: "100px", threshold: 0 },
-  );
+  const observeLink = (link: HTMLAnchorElement) => {
+    if (observedLinks.has(link)) return;
+    if (!isInternalLink(link) || link.hasAttribute("data-no-prefetch")) return;
+    observedLinks.add(link);
 
-  // Observe existing links and watch for new ones via MutationObserver.
+    // Interaction prefetch (default): hover or focus.
+    const onInteract = () => {
+      const info = linkInfo(link);
+      if (info) void prefetch(info.path, info.search);
+    };
+    link.addEventListener("pointerenter", onInteract, { once: true });
+    link.addEventListener("focus", onInteract, { once: true });
+
+    // Opt-in viewport prefetch via data-prefetch="viewport".
+    if (link.dataset.prefetch === "viewport" && "IntersectionObserver" in window) {
+      const observer = new IntersectionObserver(
+        (entries) => {
+          for (const entry of entries) {
+            if (!entry.isIntersecting) continue;
+            const info = linkInfo(entry.target as HTMLAnchorElement);
+            if (info) void prefetch(info.path, info.search);
+            observer.disconnect();
+          }
+        },
+        { rootMargin: "200px", threshold: 0 },
+      );
+      observer.observe(link);
+    }
+  };
+
   const observeLinks = () => {
     const links = document.querySelectorAll<HTMLAnchorElement>("a[href]");
-    for (const link of links) {
-      if (observedLinks.has(link)) continue;
-      if (!isInternalLink(link) || link.hasAttribute("data-no-prefetch")) continue;
-      observedLinks.add(link);
-      observer.observe(link);
-
-      // Also prefetch on hover/focus for instant navigation.
-      link.addEventListener("pointerenter", () => {
-        const href = link.getAttribute("href");
-        if (!href) return;
-        const qIndex = href.indexOf("?");
-        const path = qIndex === -1 ? href : href.slice(0, qIndex);
-        const search = qIndex === -1 ? "" : href.slice(qIndex);
-        void prefetch(path, search);
-      }, { once: true });
-    }
+    for (const link of links) observeLink(link);
   };
 
   observeLinks();
@@ -430,6 +465,16 @@ function setupLinkPrefetch(): void {
 // =============================================================================
 
 export function startClientRouter(): void {
+  // Static builds emit this marker, so the client never probes the render
+  // endpoint (zero 404s on fully static deployments). The meta lives in the
+  // initial HTML head and persists across SPA navigations.
+  const endpointMeta = document.querySelector<HTMLMetaElement>(
+    'meta[name="nix-js:render-endpoint"]',
+  );
+  if (endpointMeta?.getAttribute("content") === "off") {
+    renderEndpointAvailable = false;
+  }
+
   // Hoist styles from #app to <head> immediately on page load.
   // This prevents FOUC on the first SPA navigation.
   const app = document.getElementById("app");

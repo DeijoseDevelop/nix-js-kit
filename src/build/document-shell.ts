@@ -39,6 +39,14 @@ export interface ShellOptions {
   clientEntry?: string;
   /** Page metadata emitted as `<meta>`, `<link>` and OG/Twitter tags in `<head>`. */
   metadata?: PageMetadata;
+  /**
+   * Whether the SSR render endpoint (`/__nix-js/render`) is available at
+   * runtime. Defaults to `true`. When `false` (static deployments), the shell
+   * emits `<meta name="nix-js:render-endpoint" content="off" />` so the client
+   * router skips probing the endpoint entirely — preventing a storm of 404
+   * requests on fully static sites.
+   */
+  renderEndpoint?: boolean;
 }
 
 const HTML_ESCAPES: Record<string, string> = {
@@ -169,11 +177,16 @@ export function documentShell(opts: ShellOptions): string {
       .join("")
     : "";
 
+  const renderEndpointMeta =
+    opts.renderEndpoint === false
+      ? '\n    <meta name="nix-js:render-endpoint" content="off" />'
+      : "";
+
   return `<!DOCTYPE html>
 <html lang="${escapeHtml(lang)}"${htmlAttrs}>
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />${titleTag}${headTags}${headLinksHtml}${headScriptsHtml}
+    <meta name="viewport" content="width=device-width, initial-scale=1" />${renderEndpointMeta}${titleTag}${headTags}${headLinksHtml}${headScriptsHtml}
   </head>
   <body>
     <div id="app">${body}</div>${dataScript}${actionsScript}${entryScript}

@@ -2,6 +2,20 @@
 
 All notable changes to `@deijose/nix-js-kit` will be documented in this file.
 
+## 1.4.7
+
+### Fixed
+
+- **No more 404 storms on static deployments** — static builds now emit `<meta name="nix-js:render-endpoint" content="off">` in the HTML `<head>`, so the client router skips the `/__nix-js/render` endpoint entirely (zero 404 requests). For older builds without the marker, endpoint detection now uses a single shared probe promise — concurrent prefetches generate at most **one** request to the endpoint, and any other failed page falls back to HTML fetching without disabling the endpoint globally.
+
+### Changed
+
+- **Prefetch is now interaction-only by default (Astro-style)** — the router prefetches internal pages on hover/focus instead of prefetching every visible link on load. This removes the post-load burst of page fetches that competed with fonts and images for bandwidth on slow connections. Links can opt back into viewport prefetching with `data-prefetch="viewport"`.
+
+### Added
+
+- **`renderEndpoint` build option** — `BuildConfig.renderEndpoint` (default `true`) controls whether the built HTML announces the render endpoint as available. The SSG `build()` passes `renderEndpoint: false` automatically; dev/preview/SSR servers leave it enabled.
+
 ## 1.4.6
 
 ### Fixed
