@@ -2,6 +2,12 @@
 
 All notable changes to `@deijose/nix-js-kit` will be documented in this file.
 
+## 1.4.8
+
+### Added
+
+- **Full Open Graph image metadata** — `OpenGraphMetadata` now supports `imageAlt`, `imageWidth`, `imageHeight`, and `imageType`, emitted as `og:image:alt`, `og:image:width`, `og:image:height`, and `og:image:type`. `TwitterMetadata` gained `imageAlt` (`twitter:image:alt`). Social scrapers (Twitter/X, LinkedIn, iMessage, WhatsApp) use these tags to render share previews reliably.
+
 ## 1.4.7
 
 ### Fixed

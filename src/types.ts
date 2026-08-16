@@ -59,6 +59,14 @@ export interface OpenGraphMetadata {
   url?: string;
   /** Image URL for social sharing previews. */
   image?: string;
+  /** Image alternative text. Emitted as `og:image:alt`. */
+  imageAlt?: string;
+  /** Image width in pixels. Emitted as `og:image:width`. */
+  imageWidth?: number;
+  /** Image height in pixels. Emitted as `og:image:height`. */
+  imageHeight?: number;
+  /** Image MIME type (e.g. "image/png"). Emitted as `og:image:type`. */
+  imageType?: string;
   /** Site name shown in social cards. */
   siteName?: string;
   /** Locale, e.g. "es_ES". */
@@ -75,6 +83,8 @@ export interface TwitterMetadata {
   description?: string;
   /** Image URL for the card. */
   image?: string;
+  /** Image alternative text. Emitted as `twitter:image:alt`. */
+  imageAlt?: string;
 }
 
 /** Page-level metadata emitted into the `<head>` by the document shell. */

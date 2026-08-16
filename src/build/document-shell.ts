@@ -104,6 +104,10 @@ export function buildHeadTags(metadata: PageMetadata, fallbackTitle: string): st
       tags.push(`<meta data-nix-js-head property="og:url" content="${escapeHtml(og.url ?? metadata.canonical!)}" />`);
     }
     if (og.image) tags.push(`<meta data-nix-js-head property="og:image" content="${escapeHtml(og.image)}" />`);
+    if (og.image && og.imageAlt) tags.push(`<meta data-nix-js-head property="og:image:alt" content="${escapeHtml(og.imageAlt)}" />`);
+    if (og.image && og.imageWidth) tags.push(`<meta data-nix-js-head property="og:image:width" content="${String(og.imageWidth)}" />`);
+    if (og.image && og.imageHeight) tags.push(`<meta data-nix-js-head property="og:image:height" content="${String(og.imageHeight)}" />`);
+    if (og.image && og.imageType) tags.push(`<meta data-nix-js-head property="og:image:type" content="${escapeHtml(og.imageType)}" />`);
     if (og.siteName) tags.push(`<meta data-nix-js-head property="og:site_name" content="${escapeHtml(og.siteName)}" />`);
     if (og.locale) tags.push(`<meta data-nix-js-head property="og:locale" content="${escapeHtml(og.locale)}" />`);
   }
@@ -116,6 +120,7 @@ export function buildHeadTags(metadata: PageMetadata, fallbackTitle: string): st
       tags.push(`<meta data-nix-js-head name="twitter:description" content="${escapeHtml(tw.description ?? metadata.description!)}" />`);
     }
     if (tw.image) tags.push(`<meta data-nix-js-head name="twitter:image" content="${escapeHtml(tw.image)}" />`);
+    if (tw.image && tw.imageAlt) tags.push(`<meta data-nix-js-head name="twitter:image:alt" content="${escapeHtml(tw.imageAlt)}" />`);
   }
 
   if (metadata.other) {
