@@ -40,11 +40,14 @@ const MANAGED_GLOBALS = [
  */
 export async function renderToString(
   factory: () => NixTemplate,
+  options: { markers?: "none" | "hydration" } = {},
 ): Promise<string> {
   setSSR(true);
   try {
     try {
-      return await renderCoreTemplate(factory());
+      return await renderCoreTemplate(factory(), {
+        markers: options.markers ?? "hydration",
+      });
     } catch (error) {
       if (!isLegacyCompatibilityError(error)) throw error;
       return renderWithDom(factory);

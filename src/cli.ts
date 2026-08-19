@@ -534,13 +534,17 @@ async function buildClient(options: CliOptions): Promise<void> {
   // structured errors instead of exit-code parsing.
   const { buildClientBundle } = await import("./build/vite-build.js");
   const clientOutDir = join(options.outDir, "_nix-js");
+  // The client bundle is always served from /_nix-js/ regardless of the
+  // project's deployment base. The deployment base is applied to page HTML,
+  // not to the internal hydration bundle path.
+  const clientBase = "/_nix-js/";
   await buildClientBundle({
     root: options.root,
     userConfigPath: resolve(options.clientConfig),
     appDir: join(options.root, "src", "app"),
     islandsDir: join(options.root, "src", "islands"),
     outDir: clientOutDir,
-    base: options.resolvedConfig?.base,
+    base: clientBase,
     logPrefix: "[client]",
   });
 }

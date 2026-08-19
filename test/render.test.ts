@@ -9,6 +9,11 @@ import { dirname, resolve } from "node:path";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const appDir = resolve(__dirname, "fixtures/minimal/src/app");
 
+/** Strip Nix.js hydration markers so content assertions work with marker-enabled SSR. */
+function stripMarkers(html: string): string {
+  return html.replace(/<!--nix-\d+-->/g, "").replace(/<!--nix-end-\d+-->/g, "");
+}
+
 describe("renderPage", () => {
   it("renders the home page with loader data", async () => {
     const routes = await scanRoutes(appDir);
@@ -19,7 +24,7 @@ describe("renderPage", () => {
       config: { clientEntry: "/_nix-js/entry-client.js", lang: "es" },
       actions,
     });
-    assert.ok(html.includes("<h1>Hello from test</h1>"), "should render loader data");
+    assert.ok(stripMarkers(html).includes("<h1>Hello from test</h1>"), "should render loader data");
     assert.ok(html.includes('id="nix-js-data"'), "should serialize loader data");
     assert.ok(html.includes('id="nix-js-actions"'), "should include actions registry");
   });
@@ -34,7 +39,7 @@ describe("renderPage", () => {
       config: { clientEntry: "/_nix-js/entry-client.js", lang: "es" },
       actions,
     });
-    assert.ok(html.includes("<h1>Post: hello-world</h1>"), "should render dynamic loader data");
-    assert.ok(html.includes("<p>hello-world</p>"), "should render params");
+    assert.ok(stripMarkers(html).includes("<h1>Post: hello-world</h1>"), "should render dynamic loader data");
+    assert.ok(stripMarkers(html).includes("<p>hello-world</p>"), "should render params");
   });
 });

@@ -8,6 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased] — v2 development
 
+### Fixed — v2.0.1 patch: hydration and asset serving
+
+- **SSR hydration markers** — `renderToString` in `src/render/render-to-string.ts` now passes `markers: "hydration"` to the core `renderServer` by default. Previously it omitted the option, so the SSR output had no `<!--nix-N-->` comments or `data-nix-e-*`/`data-nix-a-*` attributes, causing `[nix-js] Hydration marker mismatch: Template has no hydration descriptor` on every island.
+- **Island async loader detection** — `src/island/hydrate.ts` detected lazy loaders via `entry.constructor?.name === "AsyncFunction"`, but `() => import(...).then(m => m.default)` is a regular function returning a Promise, not an `AsyncFunction`. This caused `e._render is not a function` because the loader function was passed directly to `hydrateTemplate` instead of being awaited. Fixed by probing the entry and checking `result instanceof Promise`.
+- **Client bundle base path** — `buildClientBundle` in `src/cli.ts` used `base: "/"` by default, so Vite's modulepreload helper generated URLs like `/assets/ThemeToggle.js` instead of `/_nix-js/assets/ThemeToggle.js`, causing 404s for all island chunks. Fixed by hardcoding `base: "/_nix-js/"` for the client bundle (independent of the project's deployment `base`).
+- **Test assertions updated** — integration, render, preview, and adapter tests now strip `<!--nix-N-->` / `<!--nix-end-N-->` hydration markers before content assertions, since SSR output now includes them by default.
+
 ### Added — Phase 13: Verification, packaging, audit, benchmarks
 
 - **Package smoke test** — `test/package-smoke.test.ts` validates tarball creation, ESM/CJS entry imports, CLI binary, exports map, Node engine, and tarball contents (no src/test/scripts leaked).

@@ -13,6 +13,10 @@ const outDir = resolve(root, "dist");
 const islandsDir = resolve(root, "src/islands");
 const generatedDir = resolve(root, ".nix-js");
 
+function stripMarkers(html: string): string {
+  return html.replace(/<!--nix-\d+-->/g, "").replace(/<!--nix-end-\d+-->/g, "");
+}
+
 describe("preview server", () => {
   after(async () => {
     await rm(outDir, { recursive: true, force: true });
@@ -47,7 +51,7 @@ describe("preview server", () => {
       const page = await fetch("http://127.0.0.1:3463/");
       assert.equal(page.status, 200);
       const body = await page.text();
-      assert.ok(body.includes("<h1>Hello from test</h1>"), "Preview should serve built home page");
+      assert.ok(stripMarkers(body).includes("<h1>Hello from test</h1>"), "Preview should serve built home page");
 
       const action = await fetch("http://127.0.0.1:3463/__nix-js/actions", {
         method: "POST",

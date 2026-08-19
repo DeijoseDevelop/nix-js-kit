@@ -16,6 +16,11 @@ const islandsDir = resolve(root, "src/islands");
 const publicDir = resolve(root, ".tmp-public");
 const secretPath = resolve(root, "secret.txt");
 
+/** Strip Nix.js hydration markers so content assertions work with marker-enabled SSR. */
+function stripMarkers(html: string): string {
+  return html.replace(/<!--nix-\d+-->/g, "").replace(/<!--nix-end-\d+-->/g, "");
+}
+
 function rawGet(port: number, path: string): Promise<{ status: number; body: string }> {
   return new Promise((resolveRequest, reject) => {
     const request = httpRequest({ host: "127.0.0.1", port, path }, (response) => {
@@ -52,7 +57,7 @@ describe("integration: build + SSR", () => {
     assert.equal(result.files[0], resolve(outDir, "index.html"));
 
     const html = await readFile(resolve(outDir, "index.html"), "utf8");
-    assert.ok(html.includes("<h1>Hello from test</h1>"), "should render loader data");
+    assert.ok(stripMarkers(html).includes("<h1>Hello from test</h1>"), "should render loader data");
     assert.ok(html.includes('id="nix-js-data"'), "should serialize loader data");
   });
 
@@ -81,7 +86,7 @@ describe("integration: build + SSR", () => {
       const page = await fetch(`http://127.0.0.1:${port}/`);
       assert.equal(page.status, 200);
       const body = await page.text();
-      assert.ok(body.includes("<h1>Hello from test</h1>"), "SSR should render home page");
+      assert.ok(stripMarkers(body).includes("<h1>Hello from test</h1>"), "SSR should render home page");
 
       const action = await fetch(`http://127.0.0.1:${port}/__nix-js/actions`, {
         method: "POST",
@@ -145,7 +150,7 @@ describe("integration: build + SSR", () => {
       assert.equal(render.status, 200);
       const cached = await getCachedHtml(cacheDir, "/__nix-js/render/?");
       assert.ok(cached, "render endpoint content should be cached");
-      assert.ok(cached.html.includes("<h1>Hello from test</h1>"), "cached HTML should match");
+      assert.ok(stripMarkers(cached.html).includes("<h1>Hello from test</h1>"), "cached HTML should match");
     } finally {
       await server.close();
     }
@@ -173,11 +178,11 @@ describe("integration: build + SSR", () => {
       const page = await fetch(`http://127.0.0.1:${port}/`);
       assert.equal(page.status, 200);
       const body = await page.text();
-      assert.ok(body.includes("<h1>Hello from test</h1>"), "SSR should render home page");
+      assert.ok(stripMarkers(body).includes("<h1>Hello from test</h1>"), "SSR should render home page");
 
       const cached = await getCachedHtml(cacheDir, "/");
       assert.ok(cached, "page should be cached");
-      assert.ok(cached.html.includes("<h1>Hello from test</h1>"), "cached HTML should match");
+      assert.ok(stripMarkers(cached.html).includes("<h1>Hello from test</h1>"), "cached HTML should match");
       assert.equal(cached.revalidate, 60, "revalidate should be 60 seconds");
     } finally {
       await server.close();
@@ -203,7 +208,7 @@ describe("integration: build + SSR", () => {
       const render = await fetch(`http://127.0.0.1:${port}/__nix-js/render?page=%2F&search=`);
       assert.equal(render.status, 200);
       const renderedBody = await render.text();
-      assert.ok(renderedBody.includes("<h1>Hello from test</h1>"), "render endpoint should return real content");
+      assert.ok(stripMarkers(renderedBody).includes("<h1>Hello from test</h1>"), "render endpoint should return real content");
     } finally {
       await server.close();
     }

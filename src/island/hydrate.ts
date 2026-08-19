@@ -71,24 +71,39 @@ async function hydrate(marker: IslandMarker, registry: IslandRegistry): Promise<
       return;
     }
 
-    // Resolve the component: either a direct function (eager) or an async
-    // loader (lazy/code-split). This enables per-island dynamic imports so
-    // islands not on the current page stay out of the initial bundle.
-    const Component = typeof entry === "function" && entry.constructor?.name === "AsyncFunction"
-      ? await (entry as () => Promise<IslandComponent>)()
-      : entry as IslandComponent;
+    // Resolve the component: either a direct component function (eager) or an
+    // async loader (lazy/code-split). This enables per-island dynamic imports
+    // so islands not on the current page stay out of the initial bundle.
+    //
+    // Detection: call the entry. If it returns a Promise, it's a lazy loader
+    // and we await it to get the module/component. If it returns a NixTemplate
+    // (or null/false/undefined), it was a direct component called without
+    // props — but that's wrong, we need to call it WITH props. So we detect
+    // "is this a loader?" by checking if the return is a Promise.
+    let resolved: unknown;
+    if (typeof entry === "function") {
+      const result = (entry as () => unknown)();
+      if (result instanceof Promise) {
+        // Lazy loader: await to get the module (or component).
+        const mod = await result;
+        resolved = typeof mod === "function" ? mod : (mod as { default?: unknown })?.default;
+      } else {
+        // Direct component: re-call with props (the no-arg call above was
+        // a probe; the real call needs the props).
+        resolved = entry;
+      }
+    } else {
+      resolved = entry;
+    }
 
-    // Handle the case where the loader returns a module with default export.
-    const resolved = (typeof Component === "function"
-      ? Component
-      : (Component as { default?: IslandComponent })?.default) as IslandComponent | undefined;
+    const Component = resolved as IslandComponent | undefined;
 
-    if (typeof resolved !== "function") {
+    if (typeof Component !== "function") {
       console.warn(`[nix-js-kit] Island "${marker.name}" did not resolve to a component function`);
       return;
     }
 
-    const template = resolved(marker.props);
+    const template = Component(marker.props);
     if (template === null || template === false || template === undefined) return;
     const prevDispose = (marker.el as any).__nix_js_island_dispose;
     if (typeof prevDispose === "function") prevDispose();

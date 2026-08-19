@@ -17,6 +17,10 @@ const outDir = resolve(root, "dist");
 const islandsDir = resolve(root, "src/islands");
 const generatedDir = resolve(root, ".nix-js");
 
+function stripMarkers(html: string): string {
+  return html.replace(/<!--nix-\d+-->/g, "").replace(/<!--nix-end-\d+-->/g, "");
+}
+
 function waitForServer(url: string, timeout = 10000): Promise<void> {
   const start = Date.now();
   return new Promise((resolve, reject) => {
@@ -81,7 +85,7 @@ describe("adapters", () => {
       const res = await fetch("http://127.0.0.1:3461/");
       assert.equal(res.status, 200);
       const body = await res.text();
-      assert.ok(body.includes("<h1>Hello from test</h1>"), "Node adapter should SSR home page");
+      assert.ok(stripMarkers(body).includes("<h1>Hello from test</h1>"), "Node adapter should SSR home page");
     } finally {
       child.kill();
     }
@@ -108,7 +112,7 @@ describe("adapters", () => {
       const res = await fetch("http://127.0.0.1:3462/");
       assert.equal(res.status, 200);
       const body = await res.text();
-      assert.ok(body.includes("<h1>Hello from test</h1>"), "Bun adapter should SSR home page");
+      assert.ok(stripMarkers(body).includes("<h1>Hello from test</h1>"), "Bun adapter should SSR home page");
     } finally {
       child.kill();
     }
@@ -133,7 +137,7 @@ describe("adapters", () => {
     const response = await handler(new Request("http://localhost/"));
     assert.equal(response.status, 200);
     const body = await response.text();
-    assert.ok(body.includes("<h1>Hello from test</h1>"), "Vercel handler should SSR home page");
+    assert.ok(stripMarkers(body).includes("<h1>Hello from test</h1>"), "Vercel handler should SSR home page");
   });
 
   it("builds Netlify handler and serves SSR", async () => {
@@ -155,7 +159,7 @@ describe("adapters", () => {
     const response = await handler(new Request("http://localhost/"));
     assert.equal(response.status, 200);
     const body = await response.text();
-    assert.ok(body.includes("<h1>Hello from test</h1>"), "Netlify handler should SSR home page");
+    assert.ok(stripMarkers(body).includes("<h1>Hello from test</h1>"), "Netlify handler should SSR home page");
   });
 
   it("handles API routes through adapters", async () => {
