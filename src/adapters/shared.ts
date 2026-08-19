@@ -255,12 +255,15 @@ export default async function handler(request: Request): Promise<Response> {
 
   const apiMatch = matchApiRoute(url.pathname, apiRoutes);
   if (apiMatch) {
-    const mod = apiMatch.route.routePath as Record<string, (request: Request) => unknown>;
+    const mod = apiMatch.route.routePath as Record<
+      string,
+      (request: Request, context?: { params: Record<string, string | string[]> }) => unknown
+    >;
     const handler = mod[request.method ?? "GET"];
     if (typeof handler !== "function") {
       return new Response("Method not allowed: " + request.method, { status: 405, headers: { "Content-Type": "text/plain" } });
     }
-    return (await handler(request)) as Response;
+    return (await handler(request, { params: apiMatch.params })) as Response;
   }
 
   const match = matchRoute(url.pathname, routes.pages);
@@ -280,6 +283,7 @@ export default async function handler(request: Request): Promise<Response> {
       config: { lang, clientEntry },
       importer: loadModule,
       actions,
+      request,
     });
     return new Response(html, { status: 200, headers: { "Content-Type": "text/html; charset=utf-8" } });
   } catch (err) {

@@ -14,7 +14,8 @@
 // pointing to the original file.
 // =============================================================================
 
-import type { NixTemplate } from "@deijose/nix-js";
+import { NIX_RENDER_PROTOCOL, type NixTemplate } from "@deijose/nix-js";
+import { getManifestEntry, buildPictureMarkup, type ImageManifest } from "./service.js";
 
 export interface ImageOptions {
   /** Source path relative to the public directory, e.g. "/images/hero.jpg". */
@@ -52,6 +53,20 @@ export type ImageFormat = "webp" | "avif" | "jpeg" | "png";
 const renderRegistry: RegisteredImage[] = [];
 
 /**
+ * The active image manifest (if loaded). When set, image() emits real
+ * <picture>/<source> markup from the manifest instead of a plain <img>.
+ */
+let activeManifest: ImageManifest | null = null;
+
+/**
+ * Set the active image manifest. Called by the build pipeline after
+ * processing, or by the SSR server on startup.
+ */
+export function setImageManifest(manifest: ImageManifest | null): void {
+  activeManifest = manifest;
+}
+
+/**
  * Returns the images registered during the current render pass and clears
  * the registry. Called by the build pipeline after rendering all pages.
  */
@@ -73,26 +88,16 @@ function registerImage(src: string, widths: number[]): void {
 }
 
 /**
- * Builds the srcset string from a base src and a list of widths.
- */
-function buildSrcset(src: string, widths: number[]): string {
-  return widths
-    .map((w) => {
-      const ext = src.split(".").pop() ?? "";
-      const base = src.slice(0, -(ext.length + 1));
-      return `${base}-${w}w.${ext} ${w}w`;
-    })
-    .join(", ");
-}
-
-/**
- * Creates a NixTemplate that renders an optimized `<img>` element.
+ * Creates a NixTemplate that renders an optimized `<img>` or `<picture>` element.
  *
- * Without sharp: emits a plain `<img>` with srcset pointing to
- * `<base>-<width>w.<ext>` files that the user must provide manually.
+ * When a manifest is active (post-build or SSR with manifest loaded):
+ *   * Emits `<picture>` with `<source>` per format and real hashed variant URLs.
+ *   * Uses real dimensions from the manifest.
  *
- * With sharp (build pipeline): the pipeline generates the variants and
- * the emitted markup is the same — the files will exist after build.
+ * When no manifest is active (first build pass, dev without sharp):
+ *   * Emits a plain `<img>` with the original src.
+ *   * Does NOT emit srcset with unresolved variant URLs.
+ *   * Registers the image for build-time processing.
  */
 export function image(opts: ImageOptions): NixTemplate {
   const {
@@ -110,20 +115,38 @@ export function image(opts: ImageOptions): NixTemplate {
   // Register for build-time processing.
   registerImage(src, widths);
 
-  const srcset = buildSrcset(src, widths);
-  const loadingAttr = priority ? "" : ' loading="lazy"';
-  const fetchPriorityAttr = priority ? ' fetchpriority="high"' : "";
-  const sizesAttr = sizes ? ` sizes="${escapeAttr(sizes)}"` : "";
-  const classAttr = className ? ` class="${escapeAttr(className)}"` : "";
-
-  const extraAttrs = Object.entries(attributes)
-    .map(([key, value]) => ` ${escapeAttr(key)}="${escapeAttr(String(value))}"`)
-    .join("");
-
-  const html = `<img src="${escapeAttr(src)}" alt="${escapeAttr(alt)}" width="${width}" height="${height}" srcset="${escapeAttr(srcset)}"${sizesAttr}${loadingAttr} decoding="async"${fetchPriorityAttr}${classAttr}${extraAttrs} />`;
+  // If a manifest is active and has an entry for this src, emit <picture>.
+  let html: string;
+  const entry = activeManifest ? getManifestEntry(activeManifest, src) : undefined;
+  if (entry && entry.variants.length > 0) {
+    html = buildPictureMarkup(entry, {
+      alt,
+      sizes,
+      priority,
+      class: className,
+      attributes,
+      fallbackSrc: src,
+      fallbackWidth: width,
+      fallbackHeight: height,
+    });
+  } else {
+    // No manifest or no variants: emit a plain <img> with the original src.
+    // Do NOT emit srcset — the variant files don't exist yet.
+    const loadingAttr = priority ? "" : ' loading="lazy"';
+    const fetchPriorityAttr = priority ? ' fetchpriority="high"' : "";
+    const sizesAttr = sizes ? ` sizes="${escapeAttr(sizes)}"` : "";
+    const classAttr = className ? ` class="${escapeAttr(className)}"` : "";
+    const extraAttrs = Object.entries(attributes)
+      .map(([key, value]) => ` ${escapeAttr(key)}="${escapeAttr(String(value))}"`)
+      .join("");
+    html = `<img src="${escapeAttr(src)}" alt="${escapeAttr(alt)}" width="${width}" height="${height}"${sizesAttr}${loadingAttr} decoding="async"${fetchPriorityAttr}${classAttr}${extraAttrs} />`;
+  }
 
   return {
     __isNixTemplate: true as const,
+    [NIX_RENDER_PROTOCOL]: {
+      renderServer: () => html,
+    },
     mount(container: Element | string) {
       const el = typeof container === "string" ? document.querySelector(container) : container;
       if (!el) throw new Error("[nix-js-kit] image(): container not found");

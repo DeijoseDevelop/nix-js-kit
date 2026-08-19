@@ -1,4 +1,5 @@
 import type { NixTemplate } from "@deijose/nix-js";
+import { renderToString as renderCoreTemplate } from "@deijose/nix-js/server";
 import { setSSR } from "./ssr-flag";
 
 // =============================================================================
@@ -40,34 +41,45 @@ const MANAGED_GLOBALS = [
 export async function renderToString(
   factory: () => NixTemplate,
 ): Promise<string> {
+  setSSR(true);
+  try {
+    try {
+      return await renderCoreTemplate(factory());
+    } catch (error) {
+      if (!isLegacyCompatibilityError(error)) throw error;
+      return renderWithDom(factory);
+    }
+  } finally {
+    setSSR(false);
+  }
+}
+
+function isLegacyCompatibilityError(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  return error instanceof ReferenceError
+    || error.message.includes("does not support server rendering")
+    || error.message.includes("requires a document");
+}
+
+async function renderWithDom(factory: () => NixTemplate): Promise<string> {
   const { Window } = await import("happy-dom");
   const window = new Window({ url: "http://localhost/" });
-
-  const g = globalThis as Record<string, unknown>;
+  const globals = globalThis as Record<string, unknown>;
   const saved: Record<string, unknown> = {};
   for (const key of MANAGED_GLOBALS) {
-    saved[key] = g[key];
-    g[key] = (window as unknown as Record<string, unknown>)[key];
+    saved[key] = globals[key];
+    globals[key] = (window as unknown as Record<string, unknown>)[key];
   }
 
-  // SSR mode: effects run a single pass without subscribing, so async work
-  // (e.g. nix-query fetches) that resolves after teardown never re-renders
-  // into a DOM that no longer exists.
-  setSSR(true);
   try {
     const template = factory();
     const container = window.document.createElement("div");
-    // `_render` returns a dispose function; we call it after reading the HTML
-    // so no effects stay subscribed once the DOM globals are torn down.
     const dispose = template._render(container as unknown as Node, null);
     const html = container.innerHTML;
-    if (typeof dispose === "function") dispose();
+    dispose();
     return html;
   } finally {
-    setSSR(false);
-    for (const key of MANAGED_GLOBALS) {
-      g[key] = saved[key];
-    }
+    for (const key of MANAGED_GLOBALS) globals[key] = saved[key];
     await window.happyDOM.close();
   }
 }

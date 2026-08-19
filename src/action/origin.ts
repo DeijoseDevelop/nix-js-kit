@@ -27,10 +27,12 @@ export interface OriginCheckOptions {
 /**
  * Returns the host:port of a URL string, or undefined if it cannot be parsed.
  */
-function hostOf(urlString: string | null | undefined): string | undefined {
+function originOf(urlString: string | null | undefined): string | undefined {
   if (!urlString) return undefined;
   try {
-    return new URL(urlString, "http://placeholder.invalid").host;
+    const url = new URL(urlString);
+    if (url.protocol !== "http:" && url.protocol !== "https:") return undefined;
+    return url.origin;
   } catch {
     return undefined;
   }
@@ -48,35 +50,24 @@ export function verifyOrigin(
   request: Request,
   options: OriginCheckOptions = {},
 ): string | undefined {
-  const targetHost = request.headers.get("Host") ?? hostOf(request.url);
-  if (!targetHost) {
-    // No way to verify; let the caller decide. We reject to be safe.
-    return "Missing Host header";
-  }
+  const targetOrigin = originOf(request.url);
+  if (!targetOrigin) return "Invalid target URL";
 
   const origin = request.headers.get("Origin");
   const referer = request.headers.get("Referer");
-  const sourceHost = hostOf(origin) ?? hostOf(referer);
-
-  if (!sourceHost) {
-    // No Origin and no Referer: same-origin legacy browsers or non-browser.
+  if (!origin && !referer) {
     return options.strictOrigin
       ? "Missing Origin and Referer headers"
       : undefined;
   }
 
-  if (sourceHost === targetHost) return undefined;
+  const sourceOrigin = origin ? originOf(origin) : originOf(referer);
+  if (!sourceOrigin) return origin ? "Invalid Origin header" : "Invalid Referer header";
+  if (sourceOrigin === targetOrigin) return undefined;
 
-  if (options.allowedOrigins) {
-    const sourceOrigin = origin ?? `${sourceHost}`;
-    for (const allowed of options.allowedOrigins) {
-      const allowedHost = hostOf(allowed) ?? allowed;
-      if (sourceHost === allowedHost) return undefined;
-      if (sourceOrigin === allowed) return undefined;
-    }
-  }
+  if (options.allowedOrigins?.some((allowed) => originOf(allowed) === sourceOrigin)) return undefined;
 
-  return `Cross-origin request blocked: source "${sourceHost}" != target "${targetHost}"`;
+  return `Cross-origin request blocked: source "${sourceOrigin}" != target "${targetOrigin}"`;
 }
 
 /** Builds a 403 Response for a rejected origin. */

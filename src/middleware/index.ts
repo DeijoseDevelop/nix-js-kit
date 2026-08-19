@@ -31,10 +31,16 @@ export type Middleware = (request: Request, context: MiddlewareContext) =>
 
 /** Context passed to the middleware function. */
 export interface MiddlewareContext {
-  /** Helper to continue to the next handler. Can attach headers. */
-  next(options?: { headers?: Record<string, string> }): void;
+  /** Helper to continue to the next handler. Can attach headers, params, and locals. */
+  next(options?: {
+    headers?: Record<string, string>;
+    params?: Record<string, string | string[]>;
+    locals?: Record<string, unknown>;
+  }): void;
   /** Matched route params (only available if the path matches a page route). */
   params?: Record<string, string | string[]>;
+  /** Per-request locals (populated by middleware, available to loaders/actions). */
+  locals?: Record<string, unknown>;
 }
 
 /** Configuration for the middleware module. */
@@ -51,11 +57,17 @@ export interface LoadedMiddleware {
 /** Result of running middleware: either a response to short-circuit with, or continue. */
 export type MiddlewareResult =
   | { kind: "response"; response: Response }
-  | { kind: "continue"; headers?: Record<string, string> };
+  | {
+    kind: "continue";
+    headers?: Record<string, string>;
+    params?: Record<string, string | string[]>;
+    locals?: Record<string, unknown>;
+  };
 
 /**
  * Loads the user's `src/middleware.ts` module. Returns `null` if no middleware
- * file exists.
+ * file exists. Distinguishes "file not found" from "file has errors" (§6):
+ * an import error is not silently treated as "no middleware".
  */
 export async function loadMiddleware(root: string): Promise<LoadedMiddleware | null> {
   const candidates = [
@@ -70,8 +82,25 @@ export async function loadMiddleware(root: string): Promise<LoadedMiddleware | n
       if (typeof handler !== "function") continue;
       const config = (mod.config ?? {}) as MiddlewareConfig;
       return { handler, config };
-    } catch {
-      // File doesn't exist or has errors — try next candidate.
+    } catch (err) {
+      // Distinguish "module not found" from actual errors.
+      // If the error is a module resolution error for this specific file,
+      // it means the file doesn't exist — try the next candidate.
+      // If it's a syntax/runtime error, rethrow so the user sees it.
+      if (err instanceof Error) {
+        const msg = err.message;
+        if (
+          msg.includes("Cannot find module") ||
+          msg.includes("Cannot find package") ||
+          msg.includes("ENOENT") ||
+          msg.includes("Module not found")
+        ) {
+          // File doesn't exist — try next candidate.
+          continue;
+        }
+      }
+      // Actual error in the middleware file — rethrow (§6).
+      throw new Error(`[nix-js-kit] Error loading middleware: ${err instanceof Error ? err.message : String(err)}`, { cause: err });
     }
   }
 
@@ -116,7 +145,10 @@ export function matchesMiddleware(pathname: string, config: MiddlewareConfig): b
 
 /**
  * Runs the middleware for a request. Returns the result indicating whether to
- * short-circuit with a response or continue.
+ * short-circuit with a response or continue with propagated headers/params/locals.
+ *
+ * Per §6: cleanup runs in `finally`, response short-circuits the pipeline,
+ * headers/params/locals are propagated to downstream handlers.
  */
 export async function runMiddleware(
   middleware: LoadedMiddleware,
@@ -124,19 +156,42 @@ export async function runMiddleware(
   params?: Record<string, string | string[]>,
 ): Promise<MiddlewareResult> {
   let nextHeaders: Record<string, string> | undefined;
+  let nextParams: Record<string, string | string[]> | undefined;
+  let nextLocals: Record<string, unknown> | undefined;
+  const cleanups: Array<() => void | Promise<void>> = [];
 
   const context: MiddlewareContext = {
     next(options) {
       if (options?.headers) nextHeaders = options.headers;
+      if (options?.params) nextParams = options.params;
+      if (options?.locals) nextLocals = options.locals;
     },
     params,
+    locals: {},
   };
 
-  const result = await middleware.handler(request, context);
+  try {
+    const result = await middleware.handler(request, context);
 
-  if (result instanceof Response) {
-    return { kind: "response", response: result };
+    if (result instanceof Response) {
+      return { kind: "response", response: result };
+    }
+
+    return {
+      kind: "continue",
+      headers: nextHeaders,
+      params: nextParams ?? params,
+      locals: nextLocals,
+    };
+  } finally {
+    // Run any cleanup functions (§6). Errors in cleanup are logged but
+    // do not propagate to the caller.
+    for (const cleanup of cleanups) {
+      try {
+        await cleanup();
+      } catch (err) {
+        console.error("[nix-js-kit] middleware cleanup error:", err);
+      }
+    }
   }
-
-  return { kind: "continue", headers: nextHeaders };
 }

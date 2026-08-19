@@ -31,10 +31,20 @@
         "src/content/raw.ts",
         "src/image/index.ts",
         "src/image/pipeline.ts",
+        "src/image/service.ts",
         "src/middleware/index.ts",
         "src/middleware/stream-boundary.ts",
         "src/seo/index.ts",
-        "src/cli.ts"
+        "src/cli.ts",
+        "src/runtime/index.ts",
+        "src/runtime/context.ts",
+        "src/runtime/handler.ts",
+        "src/runtime/static.ts",
+        "src/runtime/node-http.ts",
+        "src/config/index.ts",
+        "src/manifest/index.ts",
+        "src/integrations/index.ts",
+        "src/build/vite-build.ts"
     ],
     "exclude": [
         "src/__tests__",

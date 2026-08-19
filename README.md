@@ -3,19 +3,34 @@
 [![npm version](https://img.shields.io/npm/v/@deijose/nix-js-kit.svg)](https://www.npmjs.com/package/@deijose/nix-js-kit)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 
-> Full-stack meta-framework for Nix.js — file-based routing, SSG, SSR, ISR, islands, and SPA-like navigation. Zero extra runtime dependencies on the client: Nix.js stays at ~14KB.
+> Full-stack meta-framework for Nix.js — file-based routing, SSG, SSR, ISR, streaming, islands, actions, content collections, cache adapters, and SPA-like navigation. Zero extra runtime dependencies on the client: Nix.js stays at ~14KB.
 
 ## What is Nix.js Kit?
 
-Nix.js Kit is a meta-framework built on top of [Nix.js](https://nix-js.dev/). It brings conventions similar to Next.js App Router to Nix.js:
+Nix.js Kit is a meta-framework built on top of [Nix.js](https://nix-js.dev/). It brings conventions similar to Next.js App Router / Astro / SvelteKit to Nix.js:
 
 - `src/app/page.ts` for pages
 - `src/app/page.data.ts` for loaders
 - `src/app/page.action.ts` for server actions
 - `src/app/layout.ts` for layouts
 - `src/app/route.ts` for API endpoints
+- `src/app/loading.ts` for streaming boundaries
+- `src/content/` for Markdown content collections
+- `src/islands/` for client-side interactive components
 
-The key difference is the runtime cost: Nix.js has no virtual DOM, so islands hydrate individual signals instead of full component trees. The result is a much smaller client bundle.
+### Key features
+
+- **Routing**: file-based with dynamic segments, optional catch-all `[[...slug]]`, route conflict detection, safe URL decoding, redirects/rewrites/route headers
+- **Rendering**: SSG, SSR, ISR with explicit cache policy (public/private/dynamic), real streaming with `ReadableStream`
+- **Actions**: typed `defineAction()` with input validation, AbortSignal, idempotency, concurrency modes (latest/queue/parallel)
+- **Cache**: `CacheAdapter` with filesystem storage, SHA-256 keys, atomic writes, single-flight, stale-while-revalidate, tag-based invalidation
+- **Security**: HMAC-signed action error cookies, body limits, CSRF verification, default security headers (CSP, HSTS, X-Frame-Options, etc.), conditional static serving (ETag/Last-Modified)
+- **Content**: per-request scope via `AsyncLocalStorage`, collection name containment, frontmatter parser, Markdown rendering
+- **SEO**: sitemap generation from route manifest, sitemap index for large sites, robots.txt, JSON-LD with safe escaping
+- **Integrations**: typed hooks for `nix-i18n`, `nix-js-auth`, `nix-query`, `nix-js-testing` — without adding them as dependencies
+- **CLI**: `dev`, `build`, `preview`, `start`, `check`, `routes`, `doctor`, `adapter`
+- **Observability**: structured logger with request ID, Server-Timing, sensitive data redaction
+- **Adapters**: Node, Bun, Vercel, Netlify with capability-based deployment
 
 ## Installation
 
@@ -123,41 +138,54 @@ Options:
 | `--hydrate-import <spec>` | `@deijose/nix-js-kit/island` | Import path for `hydrateIslands` in generated entry |
 | `--client-config <path>` | `vite.client.config.ts` (auto-detected) | Vite config used to build the client bundle in dev mode |
 
-## Core features (v1.3)
+## Core features (v2.0)
 
-- **Static site generation (SSG)** from `src/app/` file conventions.
-- **File-based route scanner** — maps `page.ts` files to URLs.
-- **Dynamic routes** with `generateStaticParams` — generate static HTML for `[slug]` and `[...slug]` routes, with SSR fallback for slugs not generated at build time.
-- **Route groups** `(marketing)` — shared layouts without affecting the URL path.
-- **Layout chain** — nested `layout.ts` files wrap pages automatically.
-- **SSR runtime** — `nix-js-kit start` renders pages on demand and serves static assets.
-- **ISR** — incremental static regeneration with disk cache and TTL (`revalidate`).
-- **Streaming boundaries** — `loading.ts` shells render instantly and fetch real content from `/__nix-js/render`.
-- **SPA-like navigation** — built-in client router intercepts internal links, fetches page bodies, and swaps `#app` without full reloads.
-- **Attribute interpolation plugin** — write natural `href="/blog/${slug}"` and the kit transforms it into a single Nix.js interpolation at build time.
-- **Vite plugin** — `nixJsKit()` gives a Vite-native dev server with SSR and island entry generation.
-- **Vercel, Netlify, Bun and Node adapters** for deployment.
-- **Custom error pages** — `src/app/404.page.ts` and `src/app/500.page.ts` are rendered for 404/500 responses in SSG, SSR, and all adapters.
-- **Server actions** — define `page.action.ts` files next to `page.ts` and call them from the client with `nixJsAction()` or `callAction()`.
-- **Scoped actions** — actions are registered per page path, so names only collide if they are in the same route.
-- **Progressive enhancement** — actions work from plain HTML forms without JavaScript.
-- **`renderToString` for Nix.js templates** without touching the Nix.js core.
-- **Happy DOM** as a build-time dependency only — the Nix.js client bundle stays dependency-free.
-- **Islands** via `island()` helper — mark interactive components and hydrate them on the client with `hydrateIslands`.
-- **Auto island scan** — `build()` scans `src/islands/` and generates the client hydration entry for you.
-- **Document shell** with serialized loader data (`<script id="nix-js-data">`).
-- **CLI** (`nix-js-kit build` / `nix-js-kit dev` / `nix-js-kit preview` / `nix-js-kit start`).
-- **Metadata API** — `generateMetadata()` or loader `metadata` field with OpenGraph, Twitter cards, canonical, robots. Head tags merge on SPA navigation.
-- **Content layer** — typed Markdown collections with YAML frontmatter, `zod` schema validation, and `marked` rendering (`@deijose/nix-js-kit/content`).
-- **Image optimization** — responsive `image()` helper with `srcset`/`sizes`/`fetchpriority`; build-time WebP/AVIF variants via `sharp` (`@deijose/nix-js-kit/image`).
-- **Link prefetch** — viewport and hover prefetch with 30s TTL cache.
-- **View Transitions** — native `document.startViewTransition()` with `prefers-reduced-motion` respect.
-- **Middleware** — `src/middleware.ts` with path matchers, redirects, and header injection.
-- **CSRF protection** — Origin/Referer verification for server actions.
+- **File-based routing** — `src/app/page.ts` maps to URLs with dynamic segments (`[slug]`), catch-all (`[...slug]`), optional catch-all (`[[...slug]]`), route groups `(group)`, and route conflict detection.
+- **SSG, SSR, ISR** — static generation, on-demand SSR, and incremental static regeneration with explicit cache policy (`public`/`private`/`dynamic`), SHA-256 cache keys, atomic writes, single-flight, and tag-based invalidation.
+- **Real streaming** — `ReadableStream`-based streaming with `loading.ts` boundaries, `createStreamingResponse()`, and `createBufferedResponse()` fallback for adapters without streaming.
+- **Server actions** — typed `defineAction()` with input validation (`.parse()`), AbortSignal propagation, idempotency metadata, concurrency modes (`latest`/`queue`/`parallel`), and progressive enhancement (plain HTML forms).
+- **RequestContext** — per-request context with `params`, `locals`, `cookies` (CookieJar), `signal` (AbortSignal), `requestId`, `platform`, `route`, and mutable `response` state (headers, Set-Cookie, status). Aligned with runtime-security §4.
+- **Unified Web handler** — `createWebHandler()` is the single entry point for all runtimes (Node, Bun, Vercel, Netlify, Vite dev). Every runtime is a thin wrapper.
+- **Cache security** — `shouldCachePublic()` rejects requests with cookies/Authorization. `isResultCacheable()` rejects HTML with action error markers. No personalized ISR cache leakage.
+- **CSRF protection** — `verifyOrigin()` checks `Origin`, `Referer`, `Host`, and `Sec-Fetch-Site` with allow-list and `strictOrigin` mode.
+- **Static serving** — containment-enforced path resolution (rejects traversal, NUL, backslashes, symlinks), ETag/Last-Modified conditional requests, immutable caching for hashed assets.
+- **Security headers** — CSP with nonce support, HSTS (HTTPS only), X-Content-Type-Options, Referrer-Policy, X-Frame-Options, Permissions-Policy.
+- **Content layer** — per-request scope via `AsyncLocalStorage`, collection name containment (no path traversal), frontmatter parser, Markdown rendering.
+- **SEO** — sitemap generation from route manifest, sitemap index for >50,000 URLs, robots.txt, JSON-LD with safe escaping (`<`, `>`, `&`, U+2028, U+2029).
+- **Image optimization** — manifest-driven `<picture>` with content-addressed hashed variants, `<source>` per format, real dimensions, no upscales, Sharp optional.
+- **Islands** — lazy `import()` per island, null/error isolation, `load`/`idle`/`visible` directives, auto-scan of `src/islands/`.
+- **Client router** — AbortController + navigation token (no races), head/assets merge, aria-live announcer, canonical URL, View Transitions with reduced-motion fallback.
+- **Middleware** — `src/middleware.ts` with path matchers, `next()` carries params/locals, cleanup in `finally`, runs in dev/preview/adapters.
+- **Integrations** — typed hooks for `nix-i18n`, `nix-js-auth`, `nix-query`, `nix-js-testing` without adding them as dependencies.
+- **CLI** — `dev`, `build`, `preview`, `start`, `check`, `routes`, `doctor`, `adapter` with reliable exit codes.
+- **Observability** — structured logger with request ID, Server-Timing, sensitive data redaction (cookies, auth, tokens).
+- **Adapters** — Node, Bun, Vercel, Netlify with relocatable paths (`import.meta.url`) and capability-based deployment.
+- **Atomic build** — staging outside `dist/`, Vite JS API (no `npx`), `copyPublicAssets()`, final swap only on success.
+- **`throw new Response()`** — first-class HTTP control flow from loaders and layout loaders (redirects, 404, etc.).
+- **HMAC-signed action errors** — action error cookies signed with SHA-256, rejects tampered/forged values.
+
+## What's new in v2.0
+
+- **Breaking: Node >=20.19.0** — dropped Node 18 support. Vite 7/8 and the core engine require Node 20.19+.
+- **Breaking: Core v3** — `@deijose/nix-js` peer dependency upgraded to `^3.0.0`. New subpaths `@deijose/nix-js/server` and `@deijose/nix-js/hydrate` for SSR without DOM simulation and real hydration over existing DOM.
+- **Breaking: Image pipeline** — `image()` now emits `<picture>` from a content-addressed manifest. No more broken `srcset` URLs. Sharp is optional.
+- **Breaking: Config** — `defineConfig()` from `@deijose/nix-js-kit/config`. No `__dirname` in ESM configs.
+- **Breaking: Build** — atomic staging, Vite JS API, `copyPublicAssets()`. No partial output on failure.
+- **Breaking: Adapters** — relocatable paths via `import.meta.url`. No absolute paths embedded.
+- **Security: Path traversal** — `resolveStaticFile()` rejects encoded traversal, NUL, backslashes, Unicode normalization, symlink escape.
+- **Security: CSRF** — `verifyOrigin()` checks `Origin`/`Referer`/`Host`/`Sec-Fetch-Site` with allow-list and `strictOrigin`.
+- **Security: Cache isolation** — no public caching of personalized responses. HMAC-signed action errors.
+- **Security: JSON-LD** — escapes `<`, `>`, `&`, U+2028, U+2029.
+- **Security: Body limits** — 413 responses for oversized JSON/form bodies.
+- **DX: CLI** — `check`, `routes`, `doctor` commands with reliable exit codes.
+- **DX: Logger** — structured logger with request ID, Server-Timing, redaction.
+- **DX: Scaffold** — `create-nix-app` with `template-kit` option.
+- **Tests: 398 tests** — unit, integration, security fuzz, cache concurrency, CSRF matrix, package smoke, SSR benchmark.
+- **Audit: 0 vulnerabilities** — `bun audit` clean. `publint` All good.
 
 ## What's new in v1.3
 
-- **Security** — CSRF protection via Origin header verification; action errors stored in ephemeral cookies instead of URL params.
+- **Security** — CSRF protection via Origin header verification; action errors stored in ephemeral cookie instead of URL params.
 - **Metadata API** — `generateMetadata()` in pages, head merge on SPA navigation, scroll restoration on back/forward.
 - **Content layer** — typed Markdown collections with YAML frontmatter parser (zero deps), optional `zod` validation, `marked` rendering, `raw()` HTML helper, HMR for `.md` files.
 - **Image optimization** — `image()` with responsive srcset/sizes/lazy/fetchpriority; `sharp` pipeline generates WebP/AVIF variants at build time.
@@ -190,6 +218,7 @@ Options:
 | v1.1 | Streaming boundaries + ISR ✅ |
 | v1.2 | Interpolation plugin, SPA router, preview SSR fallback ✅ |
 | v1.3 | Security, metadata API, content layer, image optimization, prefetch, View Transitions, middleware ✅ |
+| v2.0 | Core v3 (SSR without Happy DOM, real hydration), atomic build, manifest-driven images, unified Web handler, RequestContext (§4), CSRF/static/cache hardening, CLI commands, structured logger, scaffold, 398 tests, 0 vulnerabilities ✅ |
 
 ## API
 
@@ -644,7 +673,7 @@ await bunAdapter.build({
 
 ### Node adapter
 
-Run a production server with Node (v18+):
+Run a production server with Node (>=20.19.0):
 
 ```bash
 nix-js-kit build

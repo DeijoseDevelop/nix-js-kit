@@ -113,4 +113,34 @@ describe("runMiddleware", () => {
     assert.equal(result.kind, "continue");
     assert.deepEqual(result.headers, { "x-custom": "value" });
   });
+
+  it("next() propagates params and locals (§6)", async () => {
+    const mw: LoadedMiddleware = {
+      handler: (_req, ctx) => {
+        ctx.next({
+          params: { ...ctx.params, tenant: "acme" },
+          locals: { user: { id: 1, name: "Ada" } },
+        });
+      },
+      config: {},
+    };
+    const request = new Request("http://localhost/");
+    const result = await runMiddleware(mw, request, { slug: "post" });
+    assert.equal(result.kind, "continue");
+    assert.deepEqual(result.params, { slug: "post", tenant: "acme" });
+    assert.deepEqual(result.locals, { user: { id: 1, name: "Ada" } });
+  });
+
+  it("preserves original params when next() doesn't override (§6)", async () => {
+    const mw: LoadedMiddleware = {
+      handler: (_req, ctx) => {
+        ctx.next({ headers: { "x-test": "1" } });
+      },
+      config: {},
+    };
+    const request = new Request("http://localhost/");
+    const result = await runMiddleware(mw, request, { slug: "post" });
+    assert.equal(result.kind, "continue");
+    assert.deepEqual(result.params, { slug: "post" });
+  });
 });

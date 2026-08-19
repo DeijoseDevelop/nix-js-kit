@@ -146,3 +146,14 @@ export function nixJsAction<TInput = unknown, TOutput = unknown>(
     error,
   };
 }
+
+// Server-side: defineAction() for typed actions with validation/abort/cache.
+export {
+  defineAction,
+  type DefineActionOptions,
+  type DefinedAction,
+  type DefinedActionFn,
+  type ActionContext,
+  type ActionInputValidator,
+  type ActionConcurrencyMode,
+} from "./define.js";

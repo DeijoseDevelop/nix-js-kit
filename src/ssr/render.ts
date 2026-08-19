@@ -6,6 +6,7 @@ import type { BuildConfig } from "../build/build.js";
 import type { PageDataLoad, PageProps, RouteParams, PageMetadata, GenerateMetadata } from "../types.js";
 import { existsSync } from "node:fs";
 import { decodeActionErrorCookie, ACTION_ERROR_COOKIE } from "../action/error-store.js";
+import { normalizeCachePolicy, type CachePolicy } from "../cache/policy.js";
 
 export interface RenderPageOptions {
   route: PageRoute;
@@ -33,6 +34,16 @@ export interface RenderPageResult {
   head?: string;
   /** Resolved page title (from metadata or fallback). */
   resolvedTitle?: string;
+  /**
+   * When a loader or layout throws a `Response` (e.g. `throw new Response(...,
+   * { status: 404 })`), it is captured here as a first-class response instead
+   * of being treated as an internal error (A-22).
+   */
+  response?: Response;
+  /** HTTP status code for the rendered page (e.g. 404 for not-found pages). */
+  status?: number;
+  /** Cache policy declared by the route (§9.1). */
+  cachePolicy?: CachePolicy;
 }
 
 const defaultImport = (path: string) => import(path);
@@ -76,14 +87,43 @@ export async function renderPage(options: RenderPageOptions): Promise<RenderPage
 
   let data: unknown;
   let revalidate: number | undefined;
+  let cachePolicy: import("../cache/policy.js").CachePolicy | undefined;
+  // Use a mutable container so TypeScript doesn't narrow the type after
+  // the first `if (thrownResponse)` check.
+  const thrown: { response: Response | undefined } = { response: undefined };
   if (route.dataPath) {
-    const mod = await importer(route.dataPath) as { load?: PageDataLoad; revalidate?: number };
+    const mod = await importer(route.dataPath) as {
+      load?: PageDataLoad;
+      revalidate?: number;
+      cache?: unknown;
+    };
     if (mod.load) {
-      data = await mod.load({ params, searchParams, request });
+      try {
+        data = await mod.load({ params, searchParams, request });
+      } catch (err) {
+        if (err instanceof Response) {
+          thrown.response = err;
+        } else {
+          throw err;
+        }
+      }
     }
     if (typeof mod.revalidate === "number") {
       revalidate = mod.revalidate;
     }
+    // Read cache policy from the data module (§9.1).
+    if (mod.cache) {
+      cachePolicy = normalizeCachePolicy(mod.cache);
+      if (cachePolicy.revalidate > 0) {
+        revalidate = cachePolicy.revalidate;
+      }
+    }
+  }
+
+  // If a loader threw a Response (redirect, 404, etc.), return it as a
+  // first-class response instead of rendering the page (A-22).
+  if (thrown.response) {
+    return { html: "", response: thrown.response, status: thrown.response.status };
   }
 
   // Relay an action failure previously stored in the ephemeral cookie so the
@@ -119,11 +159,25 @@ export async function renderPage(options: RenderPageOptions): Promise<RenderPage
       if (!existsSync(dataPath)) return undefined;
       const mod = (await importer(dataPath)) as { load?: PageDataLoad };
       if (mod.load) {
-        return await mod.load({ params, searchParams, request });
+        try {
+          return await mod.load({ params, searchParams, request });
+        } catch (err) {
+          if (err instanceof Response) {
+            thrown.response = err;
+            return undefined;
+          }
+          throw err;
+        }
       }
       return undefined;
     }),
   );
+
+  // If a layout loader threw a Response, return it as first-class (A-22).
+  const layoutThrown = thrown.response as Response | undefined;
+  if (layoutThrown) {
+    return { html: "", response: layoutThrown, status: layoutThrown.status };
+  }
 
   const body = await renderToString(() => {
     let template = PageComponent(props);
@@ -169,7 +223,7 @@ export async function renderPage(options: RenderPageOptions): Promise<RenderPage
   });
 
   const head = metadata ? buildHeadTags(metadata, resolvedTitle) : "";
-  return { html, revalidate, clearActionErrorCookie, head, resolvedTitle };
+  return { html, revalidate, clearActionErrorCookie, head, resolvedTitle, cachePolicy };
 }
 
 /** Extracts a `metadata` field from a loader data object, if present. */

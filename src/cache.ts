@@ -1,4 +1,5 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { createHash, randomUUID } from "node:crypto";
 import { dirname, join } from "node:path";
 
 export interface CacheEntry {
@@ -13,7 +14,7 @@ export interface CacheOptions {
 }
 
 function cachePath(cacheDir: string, pathname: string): string {
-  const key = pathname === "/" ? "index" : pathname.replace(/^\//, "").replace(/\//g, "_");
+  const key = createHash("sha256").update(pathname).digest("hex");
   return join(cacheDir, `${key}.html.json`);
 }
 
@@ -43,7 +44,13 @@ export async function setCachedHtml(
   const path = cachePath(cacheDir, pathname);
   await mkdir(dirname(path), { recursive: true });
   const entry: CacheEntry = { html, generatedAt: Date.now(), revalidate };
-  await writeFile(path, JSON.stringify(entry), "utf8");
+  const temporaryPath = `${path}.${process.pid}.${randomUUID()}.tmp`;
+  try {
+    await writeFile(temporaryPath, JSON.stringify(entry), "utf8");
+    await rename(temporaryPath, path);
+  } finally {
+    await rm(temporaryPath, { force: true });
+  }
 }
 
 export async function isStale(cacheDir: string, pathname: string): Promise<boolean> {
@@ -59,7 +66,6 @@ export async function isStale(cacheDir: string, pathname: string): Promise<boole
 
 export async function clearCache(cacheDir: string): Promise<void> {
   try {
-    const { rm } = await import("node:fs/promises");
     await rm(cacheDir, { recursive: true, force: true });
   } catch {
     // ignore

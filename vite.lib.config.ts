@@ -32,7 +32,12 @@ export default defineConfig({
                 "router/client": resolve("src/router/client.ts"),
                 "content/index": resolve("src/content/index.ts"),
                 "image/index": resolve("src/image/index.ts"),
+                "image/service": resolve("src/image/service.ts"),
                 "seo/index": resolve("src/seo/index.ts"),
+                "config/index": resolve("src/config/index.ts"),
+                "manifest/index": resolve("src/manifest/index.ts"),
+                "integrations/index": resolve("src/integrations/index.ts"),
+                "runtime/index": resolve("src/runtime/index.ts"),
             },
             name: "NixJSKit",
             formats: ["es", "cjs"],
@@ -44,7 +49,7 @@ export default defineConfig({
 
         rollupOptions: {
             external: [
-                "@deijose/nix-js",
+                /^@deijose\/nix-js(?:\/.*)?$/,
                 "happy-dom",
                 "vite",
                 "marked",
@@ -66,6 +71,10 @@ export default defineConfig({
                     "happy-dom": "HappyDOM",
                     "vite": "Vite",
                 },
+                // Vite 8 deprecates inlineDynamicImports in favor of
+                // codeSplitting:false, but codeSplitting:false does not support
+                // multiple entry points. Keep inlineDynamicImports until the
+                // upstream API supports multi-entry single-chunk output.
                 inlineDynamicImports: false,
             },
         },

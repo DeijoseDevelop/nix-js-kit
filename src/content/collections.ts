@@ -19,10 +19,11 @@
 // =============================================================================
 
 import { readdir, readFile, stat } from "node:fs/promises";
-import { join, basename } from "node:path";
+import { join, basename, resolve } from "node:path";
 import { parseDocument } from "./frontmatter.js";
 import { renderMarkdown } from "./markdown.js";
 import { createValidator, type SchemaValidator } from "./schema.js";
+import { AsyncLocalStorage } from "node:async_hooks";
 
 export interface CollectionDefinition {
   /** Schema for frontmatter validation (zod schema or plain function). */
@@ -66,21 +67,38 @@ const configCache = new Map<string, CollectionsConfig | null>();
 
 const CACHE_TTL_MS = 5000; // 5 seconds in dev; invalidated on HMR
 
-let contentRoot: string | null = null;
+// Per-request content root via AsyncLocalStorage (plan §11.4).
+// Falls back to the global contentRoot set by setContentRoot().
+const contentRootALS = new AsyncLocalStorage<string>();
+
+// Global fallback (set by CLI/Vite plugin on startup).
+let globalContentRoot: string | null = null;
 
 /**
  * Sets the root directory for content. Called by the Vite plugin / CLI on
  * startup so `getCollection` knows where to find `src/content/`.
  */
 export function setContentRoot(root: string): void {
-  contentRoot = root;
+  globalContentRoot = root;
   collectionCache.clear();
   configCache.clear();
 }
 
+/**
+ * Runs a function with a per-request content root (plan §11.4).
+ * This prevents global state leakage between concurrent requests.
+ */
+export function withContentRoot<T>(root: string, fn: () => T): T {
+  return contentRootALS.run(root, fn);
+}
+
 function resolveContentRoot(): string {
-  if (contentRoot) return contentRoot;
-  // Fallback: assume CWD/src/content.
+  // Prefer per-request context.
+  const alsRoot = contentRootALS.getStore();
+  if (alsRoot) return alsRoot;
+  // Fall back to global.
+  if (globalContentRoot) return globalContentRoot;
+  // Final fallback: assume CWD/src/content.
   return join(process.cwd(), "src", "content");
 }
 
@@ -173,14 +191,29 @@ async function scanCollection(
  * Returns all entries in a collection.
  *
  * @param name Collection name (directory under `src/content/`).
+ *
+ * Per plan §11.4: collection names are validated for containment — no
+ * path traversal or escape from the content root is allowed.
  */
 export async function getCollection<TData = Record<string, unknown>>(
   name: string,
 ): Promise<ContentEntry<TData>[]> {
+  // Containment check: reject names that could escape the content root.
+  if (!isValidCollectionName(name)) {
+    throw new Error(`[nix-js-kit] Invalid collection name: "${name}". Collection names must be alphanumeric with hyphens/underscores only.`);
+  }
+
   const root = resolveContentRoot();
   const collectionDir = join(root, name);
 
-  const cached = collectionCache.get(name);
+  // Verify the resolved path is still inside the content root.
+  const resolvedDir = resolve(collectionDir);
+  const resolvedRoot = resolve(root);
+  if (!resolvedDir.startsWith(resolvedRoot + "/") && resolvedDir !== resolvedRoot) {
+    throw new Error(`[nix-js-kit] Collection "${name}" escapes the content root.`);
+  }
+
+  const cached = collectionCache.get(`${root}:${name}`);
   if (cached && Date.now() - cached.loadedAt < CACHE_TTL_MS) {
     return cached.entries as ContentEntry<TData>[];
   }
@@ -190,8 +223,21 @@ export async function getCollection<TData = Record<string, unknown>>(
   const validator = def ? createValidator(def.schema) : undefined;
 
   const entries = await scanCollection(name, collectionDir, validator);
-  collectionCache.set(name, { entries, loadedAt: Date.now() });
+  collectionCache.set(`${root}:${name}`, { entries, loadedAt: Date.now() });
   return entries as ContentEntry<TData>[];
+}
+
+/**
+ * Validates that a collection name is safe (no path traversal, no special chars).
+ * Per plan §11.4: containment of collection names.
+ */
+function isValidCollectionName(name: string): boolean {
+  if (!name || typeof name !== "string") return false;
+  // Only allow alphanumeric, hyphens, and underscores.
+  if (!/^[a-zA-Z0-9_-]+$/.test(name)) return false;
+  // Reject names that could be path segments (., .., etc).
+  if (name === "." || name === "..") return false;
+  return true;
 }
 
 /**

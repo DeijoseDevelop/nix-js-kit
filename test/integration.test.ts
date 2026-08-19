@@ -2,7 +2,8 @@ import { describe, it, after } from "node:test";
 import assert from "node:assert/strict";
 import { build } from "../src/build/build.ts";
 import { createSsrServer } from "../src/ssr/server.ts";
-import { mkdir, rm, readFile } from "node:fs/promises";
+import { mkdir, rm, readFile, writeFile } from "node:fs/promises";
+import { request as httpRequest } from "node:http";
 import { getCachedHtml } from "../src/cache.ts";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
@@ -12,10 +13,27 @@ const root = resolve(__dirname, "fixtures/minimal");
 const appDir = resolve(root, "src/app");
 const outDir = resolve(root, "dist");
 const islandsDir = resolve(root, "src/islands");
+const publicDir = resolve(root, ".tmp-public");
+const secretPath = resolve(root, "secret.txt");
+
+function rawGet(port: number, path: string): Promise<{ status: number; body: string }> {
+  return new Promise((resolveRequest, reject) => {
+    const request = httpRequest({ host: "127.0.0.1", port, path }, (response) => {
+      let body = "";
+      response.setEncoding("utf8");
+      response.on("data", (chunk) => { body += chunk; });
+      response.on("end", () => resolveRequest({ status: response.statusCode ?? 0, body }));
+    });
+    request.on("error", reject);
+    request.end();
+  });
+}
 
 describe("integration: build + SSR", () => {
   after(async () => {
     await rm(outDir, { recursive: true, force: true });
+    await rm(publicDir, { recursive: true, force: true });
+    await rm(secretPath, { force: true });
   });
 
   it("builds static pages from the fixture", async () => {
@@ -38,7 +56,19 @@ describe("integration: build + SSR", () => {
     assert.ok(html.includes('id="nix-js-data"'), "should serialize loader data");
   });
 
+  it("copies public assets into the build output", async () => {
+    await rm(outDir, { recursive: true, force: true });
+    await rm(publicDir, { recursive: true, force: true });
+    await mkdir(resolve(publicDir, "assets"), { recursive: true });
+    await writeFile(resolve(publicDir, "assets/site.txt"), "public-asset", "utf8");
+
+    await build({ appDir, outDir, publicDir });
+
+    assert.equal(await readFile(resolve(outDir, "assets/site.txt"), "utf8"), "public-asset");
+  });
+
   it("serves SSR requests and actions", async () => {
+    await writeFile(secretPath, "outside-public-root", "utf8");
     const server = await createSsrServer({
       appDir,
       publicDir: outDir,
@@ -60,6 +90,21 @@ describe("integration: build + SSR", () => {
       });
       assert.equal(action.status, 200);
       assert.equal(await action.json(), "Hello, Ada!");
+
+      const crossOriginAction = await fetch(`http://127.0.0.1:${port}/__nix-js/actions`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "application/json",
+          Origin: "https://evil.example.com",
+        },
+        body: JSON.stringify({ name: "greet", page: "/", args: ["Mallory"] }),
+      });
+      assert.equal(crossOriginAction.status, 403);
+
+      const traversal = await rawGet(port, "/../secret.txt");
+      assert.notEqual(traversal.status, 200);
+      assert.ok(!traversal.body.includes("outside-public-root"));
 
       const api = await fetch(`http://127.0.0.1:${port}/api/posts`);
       assert.equal(api.status, 200);
@@ -119,6 +164,12 @@ describe("integration: build + SSR", () => {
     const { port } = server.server.address() as { port: number };
 
     try {
+      const privatePage = await fetch(`http://127.0.0.1:${port}/`, {
+        headers: { Cookie: "session=private-user" },
+      });
+      assert.equal(privatePage.status, 200);
+      assert.equal(await getCachedHtml(cacheDir, "/"), undefined);
+
       const page = await fetch(`http://127.0.0.1:${port}/`);
       assert.equal(page.status, 200);
       const body = await page.text();

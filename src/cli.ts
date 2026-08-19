@@ -1,8 +1,8 @@
 import { readFile, stat } from "node:fs/promises";
 import { createServer } from "node:http";
-import { extname, join, resolve, relative, dirname } from "node:path";
-import { existsSync, mkdirSync, writeFileSync, watch } from "node:fs";
-import { spawn, spawnSync } from "node:child_process";
+import { extname, join, resolve, relative } from "node:path";
+import { existsSync, watch } from "node:fs";
+import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { build, type BuildConfig } from "./build/build.js";
 import { transformProjectFiles, transformedAppDir as transformedAppDirOf } from "./build/transform-source.js";
@@ -11,6 +11,10 @@ import { scanActions, actionNames } from "./action/scan.js";
 import { scanRoutes } from "./router/route-scanner.js";
 import { matchRoute, matchApiRoute } from "./ssr/match.js";
 import { handleActionRequest } from "./action/server.js";
+import { incomingMessageToRequest } from "./runtime/node-http.js";
+import { resolveStaticFile } from "./runtime/static.js";
+import { loadNixConfig, type ResolvedNixConfig } from "./config/index.js";
+import { createAppManifest, writeAppManifest, writeRouteTypes } from "./manifest/index.js";
 
 // =============================================================================
 // --- CLI ---
@@ -27,12 +31,13 @@ import { handleActionRequest } from "./action/server.js";
 // =============================================================================
 
 export interface CliOptions {
-  command: "build" | "dev" | "preview" | "start" | "adapter";
+  command: "build" | "dev" | "preview" | "start" | "adapter" | "check" | "routes" | "doctor";
   adapterName?: "vercel" | "netlify" | "bun" | "node";
   root: string;
   appDir: string;
   islandsDir?: string;
   outDir: string;
+  publicDir?: string;
   generatedEntry: string;
   clientEntry: string;
   port: number;
@@ -49,6 +54,8 @@ export interface CliOptions {
   cacheDir?: string;
   /** Default revalidate interval in seconds for ISR. */
   defaultRevalidate?: number;
+  configFile?: string;
+  resolvedConfig?: ResolvedNixConfig;
 }
 
 function parseArgs(argv: string[]): CliOptions {
@@ -58,8 +65,17 @@ function parseArgs(argv: string[]): CliOptions {
     process.exit(0);
   }
   const command = args[0];
-  if (command !== "build" && command !== "dev" && command !== "preview" && command !== "start" && command !== "adapter") {
-    throw new Error(`Usage: nix-js-kit <build|dev|preview|start|adapter> [options]`);
+  if (
+    command !== "build" &&
+    command !== "dev" &&
+    command !== "preview" &&
+    command !== "start" &&
+    command !== "adapter" &&
+    command !== "check" &&
+    command !== "routes" &&
+    command !== "doctor"
+  ) {
+    throw new Error(`Usage: nix-js-kit <build|dev|preview|start|adapter|check|routes|doctor> [options]`);
   }
   const adapterName = command === "adapter" ? args[1] : undefined;
   if (
@@ -77,6 +93,7 @@ function parseArgs(argv: string[]): CliOptions {
   let appDir = "src/app";
   let islandsDir = "src/islands";
   let outDir = "dist";
+  let publicDir = "public";
   let generatedEntry = ".nix-js/entry-client.ts";
   let clientEntry = "/_nix-js/entry-client.js";
   let port = 3000;
@@ -87,6 +104,7 @@ function parseArgs(argv: string[]): CliOptions {
   let clientConfig: string | undefined;
   let cacheDir: string | undefined;
   let defaultRevalidate: number | undefined;
+  let configFile: string | undefined;
 
   for (let i = optionStart; i < args.length; i++) {
     const arg = args[i];
@@ -110,6 +128,10 @@ function parseArgs(argv: string[]): CliOptions {
       case "--out":
       case "-o":
         outDir = next;
+        i++;
+        break;
+      case "--public":
+        publicDir = next;
         i++;
         break;
       case "--port":
@@ -139,6 +161,10 @@ function parseArgs(argv: string[]): CliOptions {
         clientConfig = next;
         i++;
         break;
+      case "--config":
+        configFile = next;
+        i++;
+        break;
       case "--cache-dir":
         cacheDir = next;
         i++;
@@ -163,6 +189,7 @@ function parseArgs(argv: string[]): CliOptions {
     appDir: resolve(root, appDir),
     islandsDir: resolve(root, islandsDir),
     outDir: resolve(root, outDir),
+    publicDir: resolve(root, publicDir),
     generatedEntry: resolve(root, generatedEntry),
     clientEntry,
     port,
@@ -173,6 +200,7 @@ function parseArgs(argv: string[]): CliOptions {
     clientConfig: clientConfig ? resolve(root, clientConfig) : undefined,
     cacheDir: cacheDir ? resolve(root, cacheDir) : undefined,
     defaultRevalidate,
+    configFile: configFile ? resolve(root, configFile) : undefined,
   };
 }
 
@@ -186,18 +214,23 @@ Commands:
   preview          Serve the static build in production mode
   start            Run an SSR server that renders pages on demand
   adapter <name>   Generate deployment output for a platform (vercel|netlify|bun|node)
+  check            Typecheck the project and validate route/config integrity
+  routes           List all discovered routes and their metadata
+  doctor           Diagnose common configuration and environment issues
 
 Options:
   -r, --root <dir>          Project root (default: cwd)
   -a, --app <dir>           App directory relative to root (default: src/app)
   -i, --islands <dir>       Islands directory relative to root (default: src/islands)
   -o, --out <dir>           Output directory relative to root (default: dist)
+  --public <dir>            Public directory relative to root (default: public)
   -p, --port <number>       Server port (default: 3000)
   -h, --host <address>      Server host (default: 127.0.0.1)
   -l, --lang <lang>         HTML lang attribute (default: es)
   --hydrate-import <spec>   Import specifier for hydrateIslands in generated entry
   --router-import <spec>    Import specifier for startClientRouter in generated entry
   --client-config <path>    Vite config used to build the client hydration bundle
+  --config <path>           Nix config file (default: nix.config.ts/js/mjs)
   --cache-dir <dir>         Directory for ISR cache (only used by start)
   --default-revalidate <s>  Default ISR revalidate interval in seconds
 `);
@@ -208,12 +241,14 @@ function toBuildConfig(options: CliOptions): BuildConfig {
     root: options.root,
     appDir: options.appDir,
     outDir: options.outDir,
+    publicDir: options.publicDir,
     clientEntry: options.clientEntry,
     lang: options.lang,
     islandsDir: options.islandsDir,
     generatedEntry: options.generatedEntry,
     hydrateImport: options.hydrateImport,
     routerImport: options.routerImport,
+    imageFormats: options.resolvedConfig?.images.formats,
   };
 }
 
@@ -226,38 +261,77 @@ async function doBuild(options: CliOptions): Promise<void> {
     islandsDir: options.islandsDir,
     outDir: transformedRoot,
   });
-  const buildConfig = toBuildConfig(options);
-  buildConfig.appDir = transformedAppDir;
-  const result = await build(buildConfig);
 
-  if (options.islandsDir && !options.clientConfig) {
-    const autoConfig = await findClientConfig(options.root);
-    if (autoConfig) {
-      options.clientConfig = autoConfig;
-    }
-  }
-  if (options.clientConfig) {
-    buildClient(options);
-  }
+  // Atomic output staging: build into a temp directory, then swap to the final
+  // outDir so a crashed build never leaves a half-written dist.
+  const { beginAtomicStage } = await import("./build/vite-build.js");
+  const stage = await beginAtomicStage({ outDir: options.outDir });
+  const tempOutDir = stage.tempDir;
 
-  console.log(`✓ Build completo: ${result.pages} páginas generadas`);
-  for (const file of result.files) {
-    console.log("  -", relative(options.root, file));
-  }
-  if (result.islands.length > 0) {
-    console.log(`\n✓ ${result.islands.length} island(s) detectada(s):`);
-    for (const island of result.islands) {
-      console.log("  -", island.name);
+  try {
+    const buildConfig = toBuildConfig(options);
+    buildConfig.appDir = transformedAppDir;
+    buildConfig.outDir = tempOutDir;
+    const result = await build(buildConfig);
+
+    // Emit the portable application manifest and route types when a resolved
+    // config is available. The manifest is the source of truth for adapters,
+    // the client island registry and runtime route metadata.
+    if (options.resolvedConfig) {
+      try {
+        const manifest = await createAppManifest(options.resolvedConfig);
+        const manifestPath = join(tempOutDir, ".nix-js", "manifest.json");
+        await writeAppManifest(manifest, manifestPath);
+        const typesPath = join(options.root, ".nix-js", "routes.d.ts");
+        await writeRouteTypes(manifest, typesPath);
+        console.log(`  - manifest: ${relative(options.root, join(options.outDir, ".nix-js", "manifest.json"))}`);
+      } catch (err) {
+        console.warn("[nix-js-kit] manifest generation failed:", err);
+      }
     }
-    if (result.generatedEntry) {
-      console.log("  entry:", relative(options.root, result.generatedEntry));
+
+    if (options.islandsDir && !options.clientConfig) {
+      const autoConfig = await findClientConfig(options.root);
+      if (autoConfig) {
+        options.clientConfig = autoConfig;
+      }
     }
-  }
-  if (result.skipped.length > 0) {
-    console.log("\nRutas dinámicas omitidas (necesitan generateStaticParams):");
-    for (const path of result.skipped) {
-      console.log("  -", path);
+    if (options.clientConfig) {
+      // Temporarily redirect the client build to the staging directory.
+      const originalOutDir = options.outDir;
+      options.outDir = tempOutDir;
+      try {
+        await buildClient(options);
+      } finally {
+        options.outDir = originalOutDir;
+      }
     }
+
+    // Atomically swap the staged output into the final destination.
+    await stage.commit();
+
+    console.log(`✓ Build completo: ${result.pages} páginas generadas`);
+    for (const file of result.files) {
+      console.log("  -", relative(options.root, file));
+    }
+    if (result.islands.length > 0) {
+      console.log(`\n✓ ${result.islands.length} island(s) detectada(s):`);
+      for (const island of result.islands) {
+        console.log("  -", island.name);
+      }
+      if (result.generatedEntry) {
+        console.log("  entry:", relative(options.root, result.generatedEntry));
+      }
+    }
+    if (result.skipped.length > 0) {
+      console.log("\nRutas dinámicas omitidas (necesitan generateStaticParams):");
+      for (const path of result.skipped) {
+        console.log("  -", path);
+      }
+    }
+  } catch (err) {
+    await stage.rollback();
+    throw err;
   }
 }
 
@@ -397,7 +471,7 @@ export async function doPreview(options: CliOptions): Promise<import("node:http"
     throw err;
   }
 
-  const transformedRoot = join(options.outDir, ".nix-js-transformed");
+  const transformedRoot = join(options.root, ".nix-js", "preview-transformed");
   const transformedAppDir = transformedAppDirOf(options.root, options.appDir, options.islandsDir, transformedRoot);
   await transformProjectFiles({
     root: options.root,
@@ -452,46 +526,23 @@ async function findClientConfig(root: string): Promise<string | undefined> {
   return undefined;
 }
 
-function buildClient(options: CliOptions): void {
+async function buildClient(options: CliOptions): Promise<void> {
   if (!options.clientConfig) return;
-  console.log("[client] Building hydration bundle...");
 
-  // Wrap the user's Vite config so the attribute-interpolation plugin is
-  // applied to app/islands sources in the client bundle. Without it, partial
-  // interpolations like href="/movies/${slug}" inside islands would reach the
-  // browser untransformed and break hydration.
-  const wrapperPath = join(options.root, ".nix-js", "vite.client.config.mjs");
-  try {
-    mkdirSync(dirname(wrapperPath), { recursive: true });
-    writeFileSync(
-      wrapperPath,
-      [
-        `import user from ${JSON.stringify(resolve(options.clientConfig))};`,
-        `import { nixJsInterpolationPlugin } from "@deijose/nix-js-kit/vite";`,
-        `const base = typeof user === "function" ? await user({ command: "build", mode: "production" }) : user;`,
-        `const resolved = base && typeof base.then === "function" ? await base : base;`,
-        `export default {`,
-        `  ...(resolved ?? {}),`,
-        `  plugins: [...(resolved?.plugins ?? []), nixJsInterpolationPlugin({`,
-        `    appDir: ${JSON.stringify(join(options.root, "src", "app"))},`,
-        `    islandsDir: ${JSON.stringify(join(options.root, "src", "islands"))},`,
-        `  })],`,
-        `};`,
-        ``,
-      ].join("\n"),
-      "utf8",
-    );
-  } catch (err) {
-    console.error("[client] Failed to write wrapped client config:", err);
-  }
-
-  const result = spawnSync("npx", ["vite", "build", "--config", wrapperPath], {
-    stdio: "inherit",
-    cwd: options.root,
+  // Use the programmatic Vite build API instead of spawnSync("npx", ["vite", ...]).
+  // This avoids child-process overhead, shares the module cache, and gives us
+  // structured errors instead of exit-code parsing.
+  const { buildClientBundle } = await import("./build/vite-build.js");
+  const clientOutDir = join(options.outDir, "_nix-js");
+  await buildClientBundle({
+    root: options.root,
+    userConfigPath: resolve(options.clientConfig),
+    appDir: join(options.root, "src", "app"),
+    islandsDir: join(options.root, "src", "islands"),
+    outDir: clientOutDir,
+    base: options.resolvedConfig?.base,
+    logPrefix: "[client]",
   });
-  if (result.status !== 0) {
-    console.error("[client] Hydration bundle build failed");
-  }
 }
 
 async function handleRequest(
@@ -513,18 +564,7 @@ async function handleRequest(
   if (urlPath === "/__nix-js/actions" && req.method === "POST") {
     try {
       const body = await readRequestBody(req);
-      const headers = new Headers();
-      const contentType = req.headers["content-type"];
-      const accept = req.headers["accept"];
-      const cookie = req.headers["cookie"];
-      if (contentType) headers.set("Content-Type", contentType);
-      if (accept) headers.set("Accept", accept);
-      if (cookie) headers.set("Cookie", cookie);
-      const request = new Request(`http://${req.headers.host ?? "localhost"}${req.url}`, {
-        method: "POST",
-        headers,
-        body,
-      });
+      const request = incomingMessageToRequest(req, body);
       const response = await handleActionRequest(request, createActionResolver(actions, routes));
       res.writeHead(response.status, Object.fromEntries(response.headers.entries()));
       res.end(await response.text());
@@ -544,12 +584,14 @@ async function handleRequest(
       const page = url.searchParams.get("page") ?? "/";
       const search = url.searchParams.get("search") ?? "";
       const wantsJson = (req.headers["accept"] ?? "").includes("application/json");
+      const request = incomingMessageToRequest(req);
       const { body, title } = await renderPageBody({
         routes,
         pathname: page,
         searchParams: new URLSearchParams(search),
         config: { lang: options.lang, clientEntry: options.clientEntry },
         actions: publicActions,
+        request,
       });
       if (wantsJson) {
         res.writeHead(200, cacheHeaders({ "Content-Type": "application/json; charset=utf-8" }));
@@ -586,18 +628,7 @@ async function handleRequest(
         return;
       }
       const body = req.method && req.method !== "GET" && req.method !== "HEAD" ? await readRequestBody(req) : undefined;
-      const headers = new Headers();
-      const contentType = req.headers["content-type"];
-      const accept = req.headers["accept"];
-      const cookie = req.headers["cookie"];
-      if (contentType) headers.set("Content-Type", contentType);
-      if (accept) headers.set("Accept", accept);
-      if (cookie) headers.set("Cookie", cookie);
-      const request = new Request(`http://${req.headers.host ?? "localhost"}${req.url}`, {
-        method: req.method,
-        headers,
-        body,
-      });
+      const request = incomingMessageToRequest(req, body);
       const response = (await handler(request, { params: apiMatch.params })) as Response;
       res.writeHead(response.status, Object.fromEntries(response.headers.entries()));
       res.end(Buffer.from(await response.arrayBuffer()));
@@ -610,31 +641,25 @@ async function handleRequest(
   }
 
   const originalPath = urlPath;
-  if (urlPath.endsWith("/")) urlPath += "index.html";
-  if (extname(urlPath) === "") urlPath += "/index.html";
-  if (urlPath.startsWith("/")) urlPath = urlPath.slice(1);
-
-  const filePath = join(options.outDir, urlPath);
-
-  try {
-    const data = await readFile(filePath);
-    const contentType = guessContentType(filePath);
-    if (noCache && contentType.includes("text/html")) {
-      // Dev mode: strip the render-endpoint marker so the client router uses
-      // the (live) `/__nix-js/render` endpoint for fast SPA navigation.
-      const stripped = data
-        .toString("utf8")
-        .replace('<meta name="nix-js:render-endpoint" content="off" />', "");
+  const filePath = await resolveStaticFile(options.outDir, urlPath);
+  if (filePath) {
+    try {
+      const data = await readFile(filePath);
+      const contentType = guessContentType(filePath);
+      if (noCache && contentType.includes("text/html")) {
+        // Dev mode: strip the render-endpoint marker so the client router uses
+        // the (live) `/__nix-js/render` endpoint for fast SPA navigation.
+        const stripped = data
+          .toString("utf8")
+          .replace('<meta name="nix-js:render-endpoint" content="off" />', "");
+        res.writeHead(200, cacheHeaders({ "Content-Type": contentType }));
+        res.end(stripped);
+        return;
+      }
       res.writeHead(200, cacheHeaders({ "Content-Type": contentType }));
-      res.end(stripped);
+      res.end(data);
       return;
-    }
-    res.writeHead(200, cacheHeaders({ "Content-Type": contentType }));
-    res.end(data);
-    return;
-  } catch (err) {
-    const code = (err as NodeJS.ErrnoException).code;
-    if (code !== "ENOENT" && code !== "EISDIR") {
+    } catch (err) {
       res.writeHead(500, cacheHeaders({ "Content-Type": "text/plain; charset=utf-8" }));
       res.end(String(err));
       return;
@@ -667,6 +692,7 @@ async function handleRequest(
       searchParams: new URLSearchParams(req.url?.split("?")[1] ?? ""),
       config: { lang: options.lang, clientEntry: options.clientEntry },
       actions: publicActions,
+      request: incomingMessageToRequest(req),
     });
     res.writeHead(200, cacheHeaders({ "Content-Type": "text/html; charset=utf-8" }));
     res.end(result.html);
@@ -740,6 +766,18 @@ function guessContentType(filePath: string): string {
     case ".jpg":
     case ".jpeg":
       return "image/jpeg";
+    case ".webp":
+      return "image/webp";
+    case ".avif":
+      return "image/avif";
+    case ".ico":
+      return "image/x-icon";
+    case ".woff":
+      return "font/woff";
+    case ".woff2":
+      return "font/woff2";
+    case ".wasm":
+      return "application/wasm";
     default:
       return "application/octet-stream";
   }
@@ -751,6 +789,7 @@ async function doAdapter(options: CliOptions): Promise<void> {
     appDir: options.appDir,
     islandsDir: options.islandsDir ?? resolve(options.root, "src/islands"),
     outDir: options.outDir,
+    publicDir: options.publicDir,
     clientEntry: options.clientEntry,
     lang: options.lang,
     hydrateImport: options.hydrateImport,
@@ -774,8 +813,41 @@ async function doAdapter(options: CliOptions): Promise<void> {
   }
 }
 
+async function applyProjectConfig(options: CliOptions, argv: string[]): Promise<void> {
+  // Map non-build commands to "build" or "serve" for config resolution.
+  const command = (options.command === "adapter" || options.command === "routes" || options.command === "doctor")
+    ? "build"
+    : options.command;
+  const config = await loadNixConfig({
+    root: options.root,
+    configFile: options.configFile,
+    command,
+  });
+  const args = argv.slice(2);
+  const has = (...names: string[]) => names.some((name) => args.includes(name));
+  options.root = config.root;
+  if (!has("--app", "-a")) options.appDir = config.appDir;
+  if (!has("--islands", "-i")) options.islandsDir = config.islandsDir;
+  if (!has("--out", "-o")) options.outDir = config.outDir;
+  if (!has("--public")) options.publicDir = config.publicDir;
+  if (!has("--cache-dir")) options.cacheDir = config.cache.dir;
+  if (!has("--default-revalidate")) options.defaultRevalidate = config.cache.defaultRevalidate;
+  options.generatedEntry = resolve(config.root, ".nix-js/entry-client.ts");
+  options.resolvedConfig = config;
+}
+
 export async function run(argv: string[]): Promise<void> {
   const options = parseArgs(argv);
+
+  // Commands that don't need project config resolution.
+  if (options.command === "doctor") {
+    const { doDoctor } = await import("./cli/commands.js");
+    const code = await doDoctor(options);
+    process.exit(code);
+  }
+
+  await applyProjectConfig(options, argv);
+
   if (options.command === "build") {
     await doBuild(options);
   } else if (options.command === "preview") {
@@ -784,6 +856,14 @@ export async function run(argv: string[]): Promise<void> {
     await doStart(options);
   } else if (options.command === "adapter") {
     await doAdapter(options);
+  } else if (options.command === "check") {
+    const { doCheck } = await import("./cli/commands.js");
+    const code = await doCheck(options);
+    process.exit(code);
+  } else if (options.command === "routes") {
+    const { doRoutes } = await import("./cli/commands.js");
+    const code = await doRoutes(options);
+    process.exit(code);
   } else if (process.env[DEV_WORKER_ENV] === "1") {
     await doDev(options);
   } else {

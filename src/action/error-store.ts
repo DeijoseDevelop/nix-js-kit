@@ -20,11 +20,17 @@
 // only the overflow path for large payloads.
 // =============================================================================
 
-import { randomBytes } from "node:crypto";
+import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 
 const COOKIE_NAME = "__nix_js_action_error";
 const MAX_COOKIE_SIZE = 3500; // bytes; leaves headroom under the 4KB cookie limit
 const TTL_MS = 15_000;
+
+// HMAC key for signing action error cookies. In production this should be
+// set via NIX_JS_ACTION_SECRET env var; otherwise we derive a per-process
+// key (sufficient for single-process dev/preview, but NOT for multi-instance).
+const ACTION_SECRET =
+  process.env.NIX_JS_ACTION_SECRET ?? randomBytes(32).toString("hex");
 
 interface StoredError {
   data: unknown;
@@ -49,10 +55,42 @@ function scheduleSweep(): void {
 }
 
 /**
+ * Signs a payload with HMAC-SHA256 using the action secret.
+ * Returns `signature.payload` (both hex/base64url).
+ */
+function sign(payload: string): string {
+  const sig = createHmac("sha256", ACTION_SECRET).update(payload).digest("hex");
+  return `${sig}.${payload}`;
+}
+
+/**
+ * Verifies a signed value and returns the payload if valid, or undefined.
+ * Uses timingSafeEqual to prevent timing attacks.
+ */
+function verify(value: string): string | undefined {
+  const dotIndex = value.indexOf(".");
+  if (dotIndex === -1) return undefined;
+  const sig = value.slice(0, dotIndex);
+  const payload = value.slice(dotIndex + 1);
+  const expectedSig = createHmac("sha256", ACTION_SECRET).update(payload).digest("hex");
+  if (sig.length !== expectedSig.length) return undefined;
+  try {
+    if (timingSafeEqual(Buffer.from(sig), Buffer.from(expectedSig))) {
+      return payload;
+    }
+  } catch {
+    // Length mismatch — invalid.
+  }
+  return undefined;
+}
+
+/**
  * Encodes an action failure for the redirect cookie. When the payload fits
- * inside the cookie limit, it is embedded directly as base64url JSON. When it
- * is too large, it is stored in memory and only a short id is written to the
- * cookie.
+ * inside the cookie limit, it is embedded directly as a signed base64url JSON
+ * value. When it is too large, it is stored in memory and only a short signed
+ * id is written to the cookie.
+ *
+ * The cookie is signed with HMAC-SHA256 to prevent forgery (A-20).
  *
  * @returns The cookie value to set on the redirect response.
  */
@@ -62,29 +100,35 @@ export function encodeActionErrorCookie(
 ): { value: string; storeId?: string } {
   const payload = JSON.stringify({ d: data, s: status });
   const encoded = Buffer.from(payload, "utf8").toString("base64url");
-  if (encoded.length <= MAX_COOKIE_SIZE) {
-    return { value: encoded };
+  const signed = sign(encoded);
+  if (signed.length <= MAX_COOKIE_SIZE) {
+    return { value: signed };
   }
 
-  // Overflow: stash in memory and reference by id.
+  // Overflow: stash in memory and reference by signed id.
   const id = randomBytes(12).toString("hex");
   store.set(id, { data, status, expiresAt: Date.now() + TTL_MS });
   scheduleSweep();
-  return { value: `id:${id}`, storeId: id };
+  return { value: sign(`id:${id}`), storeId: id };
 }
 
 /**
  * Decodes a cookie value (previously produced by `encodeActionErrorCookie`)
- * into the failure payload. Resolves in-memory overflow entries and deletes
- * them after reading.
+ * into the failure payload. Verifies the HMAC signature first, then resolves
+ * in-memory overflow entries and deletes them after reading.
  */
 export function decodeActionErrorCookie(value: string | undefined | null):
   | { data: unknown; status: number }
   | undefined {
   if (!value) return undefined;
 
-  if (value.startsWith("id:")) {
-    const id = value.slice(3);
+  // Verify signature first.
+  const verifiedPayload = verify(value);
+  if (verifiedPayload === undefined) return undefined;
+
+  // Check if it's an in-memory store reference.
+  if (verifiedPayload.startsWith("id:")) {
+    const id = verifiedPayload.slice(3);
     const entry = store.get(id);
     if (!entry) return undefined;
     store.delete(id);
@@ -93,7 +137,7 @@ export function decodeActionErrorCookie(value: string | undefined | null):
   }
 
   try {
-    const json = Buffer.from(value, "base64url").toString("utf8");
+    const json = Buffer.from(verifiedPayload, "base64url").toString("utf8");
     const parsed = JSON.parse(json) as { d: unknown; s: number };
     return { data: parsed.d, status: parsed.s };
   } catch {

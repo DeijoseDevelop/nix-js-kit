@@ -15,7 +15,68 @@ export type ActionResolver = (
 ) => Promise<((...args: unknown[]) => unknown) | undefined>;
 
 /** Options shared by `handleActionRequest` callers for CSRF protection. */
-export interface ActionSecurityOptions extends OriginCheckOptions { }
+export interface ActionSecurityOptions extends OriginCheckOptions {
+  /** Maximum body size in bytes. Defaults to 1MB (1_048_576). */
+  bodyLimit?: number;
+}
+
+/** Default body size limit: 1MB. */
+const DEFAULT_BODY_LIMIT = 1_048_576;
+
+/**
+ * Reads the request body as text, enforcing a maximum size.
+ * Returns a 413 response if the body exceeds the limit.
+ */
+async function readBodyWithLimit(
+  request: Request,
+  limit: number,
+): Promise<{ ok: true; text: string } | { ok: false; response: Response }> {
+  const contentLength = request.headers.get("Content-Length");
+  if (contentLength && parseInt(contentLength, 10) > limit) {
+    return {
+      ok: false,
+      response: new Response("Request body too large", {
+        status: 413,
+        headers: { "Content-Type": "text/plain" },
+      }),
+    };
+  }
+  // Read the body as a stream with a size cap to prevent memory exhaustion
+  // from chunked transfer encoding without Content-Length.
+  const reader = request.body?.getReader();
+  if (!reader) {
+    return { ok: true, text: "" };
+  }
+  const chunks: Uint8Array[] = [];
+  let totalSize = 0;
+  try {
+    for (; ;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      totalSize += value.byteLength;
+      if (totalSize > limit) {
+        try { reader.cancel(); } catch { /* ignore */ }
+        return {
+          ok: false,
+          response: new Response("Request body too large", {
+            status: 413,
+            headers: { "Content-Type": "text/plain" },
+          }),
+        };
+      }
+      chunks.push(value);
+    }
+  } finally {
+    try { reader.releaseLock(); } catch { /* ignore */ }
+  }
+  const total = new Uint8Array(totalSize);
+  let offset = 0;
+  for (const chunk of chunks) {
+    total.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return { ok: true, text: new TextDecoder().decode(total) };
+}
 
 function parseFormBody(body: string): Record<string, unknown> {
   const params = new URLSearchParams(body);
@@ -32,7 +93,10 @@ function parseFormBody(body: string): Record<string, unknown> {
   return result;
 }
 
-async function parseActionRequest(request: Request): Promise<
+async function parseActionRequest(
+  request: Request,
+  bodyLimit: number = DEFAULT_BODY_LIMIT,
+): Promise<
   | { ok: true; name: string; page?: string; args: unknown[]; wantsJson: boolean }
   | { ok: false; response: Response }
 > {
@@ -54,9 +118,11 @@ async function parseActionRequest(request: Request): Promise<
   let args: unknown[] = [];
 
   if (contentType.includes("application/json")) {
+    const bodyResult = await readBodyWithLimit(request, bodyLimit);
+    if (!bodyResult.ok) return { ok: false, response: bodyResult.response };
     let body: ActionRequest;
     try {
-      body = (await request.json()) as ActionRequest;
+      body = JSON.parse(bodyResult.text) as ActionRequest;
     } catch {
       return {
         ok: false,
@@ -73,19 +139,58 @@ async function parseActionRequest(request: Request): Promise<
     contentType.includes("application/x-www-form-urlencoded") ||
     contentType.includes("multipart/form-data")
   ) {
-    const form = await request.formData();
-    name = form.get("__nix_js_action_name") as string | null ?? undefined;
-    page = form.get("__nix_js_action_page") as string | null ?? undefined;
-    const input: Record<string, unknown> = {};
-    for (const [key, value] of form) {
-      if (key === "__nix_js_action_name" || key === "__nix_js_action_page") continue;
-      input[key] = value;
+    // For multipart, use the native formData() parser after checking
+    // Content-Length against the limit. For urlencoded, use our size-capped
+    // reader to handle chunked encoding without Content-Length.
+    if (contentType.includes("multipart/form-data")) {
+      const contentLength = request.headers.get("Content-Length");
+      if (contentLength && parseInt(contentLength, 10) > bodyLimit) {
+        return {
+          ok: false,
+          response: new Response("Request body too large", {
+            status: 413,
+            headers: { "Content-Type": "text/plain" },
+          }),
+        };
+      }
+      let form: FormData;
+      try {
+        form = await request.formData();
+      } catch {
+        return {
+          ok: false,
+          response: new Response("Invalid form body", {
+            status: 400,
+            headers: { "Content-Type": "text/plain" },
+          }),
+        };
+      }
+      name = form.get("__nix_js_action_name") as string | null ?? undefined;
+      page = form.get("__nix_js_action_page") as string | null ?? undefined;
+      const input: Record<string, unknown> = {};
+      for (const [key, value] of form) {
+        if (key === "__nix_js_action_name" || key === "__nix_js_action_page") continue;
+        input[key] = value;
+      }
+      args = [input];
+    } else {
+      const bodyResult = await readBodyWithLimit(request, bodyLimit);
+      if (!bodyResult.ok) return { ok: false, response: bodyResult.response };
+      const form = parseFormBody(bodyResult.text);
+      name = form.__nix_js_action_name as string | undefined;
+      page = form.__nix_js_action_page as string | undefined;
+      const input: Record<string, unknown> = {};
+      for (const [key, value] of Object.entries(form)) {
+        if (key === "__nix_js_action_name" || key === "__nix_js_action_page") continue;
+        input[key] = value;
+      }
+      args = [input];
     }
-    args = [input];
   } else {
     // Try to parse a plain form body as a fallback for progressive enhancement.
-    const text = await request.text();
-    const form = parseFormBody(text);
+    const bodyResult = await readBodyWithLimit(request, bodyLimit);
+    if (!bodyResult.ok) return { ok: false, response: bodyResult.response };
+    const form = parseFormBody(bodyResult.text);
     name = form.__nix_js_action_name as string | undefined;
     page = form.__nix_js_action_page as string | undefined;
     const input: Record<string, unknown> = {};
@@ -135,7 +240,7 @@ export async function handleActionRequest(
   const originError = verifyOrigin(request, security);
   if (originError) return originForbidden(originError);
 
-  const parsed = await parseActionRequest(request);
+  const parsed = await parseActionRequest(request, security.bodyLimit ?? DEFAULT_BODY_LIMIT);
   if (!parsed.ok) return parsed.response;
 
   const { name, page, args, wantsJson } = parsed;

@@ -22,8 +22,8 @@ export default defineConfig({
         lib: {
             entry: resolve("src/cli.ts"),
             name: "NixJSKitCli",
-            formats: ["es"],
-            fileName: () => "cli.js",
+            formats: ["es", "cjs"],
+            fileName: (format) => format === "cjs" ? "cli.cjs" : "cli.js",
         },
 
         rollupOptions: {

@@ -176,6 +176,25 @@ describe("verifyOrigin (CSRF protection)", () => {
     assert.ok(error.includes("Cross-origin"), "error message should mention cross-origin");
   });
 
+  it("rejects a malformed Origin even when Referer is same-origin", () => {
+    const request = new Request("http://localhost:3000/__nix-js/actions", {
+      method: "POST",
+      headers: {
+        Origin: "http://[invalid-url]",
+        Referer: "http://localhost:3000/contact",
+      },
+    });
+    assert.ok(verifyOrigin(request));
+  });
+
+  it("rejects a different protocol on the same host", () => {
+    const request = new Request("https://localhost:3000/__nix-js/actions", {
+      method: "POST",
+      headers: { Origin: "http://localhost:3000" },
+    });
+    assert.ok(verifyOrigin(request));
+  });
+
   it("allows requests without Origin and Referer by default", () => {
     const request = new Request("http://localhost:3000/__nix-js/actions", {
       method: "POST",
@@ -233,12 +252,19 @@ describe("action error cookie store", () => {
     const largeData = { errors: "x".repeat(5000) };
     const { value, storeId } = encodeActionErrorCookie(largeData, 400);
     assert.ok(storeId, "large payload should use the store");
-    assert.ok(value.startsWith("id:"), "cookie value should reference the store id");
+    // The cookie value is now signed, so it won't start with "id:" directly.
+    // But decoding should still work.
     const decoded = decodeActionErrorCookie(value);
     assert.deepEqual(decoded, { data: largeData, status: 400 });
   });
 
   it("returns undefined for unknown store ids", () => {
+    // Forge a signed "id:nonexistent" — but without the right secret, it
+    // won't verify. Use a properly signed value with a nonexistent id.
+    const { value } = encodeActionErrorCookie({ x: 1 }, 400);
+    // Tamper with the value to reference a nonexistent store id.
+    // Since we can't forge without the secret, just test with a raw unsigned
+    // value — it should fail signature verification.
     assert.equal(decodeActionErrorCookie("id:nonexistent"), undefined);
   });
 
@@ -247,5 +273,81 @@ describe("action error cookie store", () => {
     assert.equal(decodeActionErrorCookie(null), undefined);
     assert.equal(decodeActionErrorCookie(""), undefined);
     assert.equal(decodeActionErrorCookie("!!!invalid-base64!!!"), undefined);
+  });
+
+  it("rejects tampered/forged cookie values (A-20)", () => {
+    // A forged unsigned base64url value should be rejected.
+    const forged = Buffer.from(JSON.stringify({ d: "hacked", s: 200 }), "utf8").toString("base64url");
+    assert.equal(decodeActionErrorCookie(forged), undefined, "unsigned value should be rejected");
+
+    // A value with a wrong signature should be rejected.
+    const { value } = encodeActionErrorCookie({ real: true }, 400);
+    const tampered = "deadbeef." + value.slice(value.indexOf(".") + 1);
+    assert.equal(decodeActionErrorCookie(tampered), undefined, "wrong signature should be rejected");
+  });
+
+  it("produces signed cookie values with HMAC prefix", () => {
+    const { value } = encodeActionErrorCookie({ test: true }, 400);
+    // Signed values have format: <hex-signature>.<base64url-payload>
+    assert.ok(value.includes("."), "signed value should contain a dot separator");
+    const sig = value.slice(0, value.indexOf("."));
+    // HMAC-SHA256 produces 64 hex chars.
+    assert.equal(sig.length, 64, "signature should be 64 hex chars (HMAC-SHA256)");
+  });
+});
+
+describe("handleActionRequest body limits (§8.2)", () => {
+  it("rejects oversized JSON bodies with 413", async () => {
+    const largeArgs = ["x".repeat(10_000)];
+    const body = JSON.stringify({ name: "greet", page: "/", args: largeArgs });
+    const request = new Request("http://localhost:3000/__nix-js/actions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Origin: "http://localhost:3000",
+        "Content-Length": String(body.length),
+      },
+      body,
+    });
+    const response = await handleActionRequest(request, async () => () => "ok", {
+      bodyLimit: 100,
+    });
+    assert.equal(response.status, 413);
+  });
+
+  it("rejects oversized form bodies with 413", async () => {
+    const body = "__nix_js_action_name=greet&__nix_js_action_page=/&data=" + "x".repeat(10_000);
+    const request = new Request("http://localhost:3000/__nix-js/actions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        Origin: "http://localhost:3000",
+        "Content-Length": String(body.length),
+      },
+      body,
+    });
+    const response = await handleActionRequest(request, async () => () => "ok", {
+      bodyLimit: 100,
+    });
+    assert.equal(response.status, 413);
+  });
+
+  it("accepts bodies within the limit", async () => {
+    const body = JSON.stringify({ name: "greet", page: "/", args: ["Ada"] });
+    const request = new Request("http://localhost:3000/__nix-js/actions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+        Origin: "http://localhost:3000",
+      },
+      body,
+    });
+    const response = await handleActionRequest(
+      request,
+      async () => ((...args: unknown[]) => `Hello, ${args[0]}!`),
+      { bodyLimit: 1_048_576 },
+    );
+    assert.equal(response.status, 200);
   });
 });

@@ -1,6 +1,6 @@
 import { createServer, type IncomingMessage, type Server } from "node:http";
-import { readFile, stat } from "node:fs/promises";
-import { extname, join } from "node:path";
+import { readFile } from "node:fs/promises";
+import { extname } from "node:path";
 import { scanRoutes } from "../router/route-scanner.js";
 import { scanActions, actionNames } from "../action/scan.js";
 import { handleActionRequest, type ActionSecurityOptions } from "../action/server.js";
@@ -9,6 +9,8 @@ import { matchApiRoute, matchRoute } from "./match.js";
 import { renderPage, renderErrorPage } from "./render.js";
 import { renderPageBody, renderStreamingPage, RouteNotFoundError } from "./stream.js";
 import { loadMiddleware, matchesMiddleware, runMiddleware } from "../middleware/index.js";
+import { incomingMessageToRequest } from "../runtime/node-http.js";
+import { resolveStaticFile } from "../runtime/static.js";
 
 export interface SsrServerOptions {
   /** Absolute path to the app directory (e.g. /project/src/app). */
@@ -72,18 +74,7 @@ export async function createSsrServer(options: SsrServerOptions): Promise<SsrSer
     if (urlPath === "/__nix-js/actions" && req.method === "POST") {
       try {
         const body = await readRequestBody(req);
-        const headers = new Headers();
-        const contentType = req.headers["content-type"];
-        const accept = req.headers["accept"];
-        const referer = req.headers["referer"];
-        if (contentType) headers.set("Content-Type", contentType);
-        if (accept) headers.set("Accept", accept);
-        if (referer) headers.set("Referer", referer);
-        const request = new Request(`http://${req.headers.host ?? "localhost"}${req.url}`, {
-          method: "POST",
-          headers,
-          body,
-        });
+        const request = incomingMessageToRequest(req, body);
         const response = await handleActionRequest(request, resolveAction, options.actionSecurity);
         res.writeHead(response.status, Object.fromEntries(response.headers.entries()));
         res.end(await response.text());
@@ -101,17 +92,7 @@ export async function createSsrServer(options: SsrServerOptions): Promise<SsrSer
       const search = renderUrl.searchParams.get("search") ?? "";
       const wantsJson = (req.headers["accept"] ?? "").includes("application/json");
       try {
-        const headers = new Headers();
-        const contentType = req.headers["content-type"];
-        const accept = req.headers["accept"];
-        const cookie = req.headers["cookie"];
-        if (contentType) headers.set("Content-Type", contentType);
-        if (accept) headers.set("Accept", accept);
-        if (cookie) headers.set("Cookie", cookie);
-        const request = new Request(`http://${req.headers.host ?? "localhost"}${req.url}`, {
-          method: req.method,
-          headers,
-        });
+        const request = incomingMessageToRequest(req);
 
         // ISR: cache the real content served by this endpoint when a cache
         // directory is configured, so streamed pages regenerate on a TTL.
@@ -121,7 +102,7 @@ export async function createSsrServer(options: SsrServerOptions): Promise<SsrSer
         let lastRenderedHead: string | undefined;
         const ttl = await resolveTtl(options, page, routes);
         const cacheKey = `/__nix-js/render${page}?${search}`;
-        if (options.cacheDir && typeof ttl === "number") {
+        if (options.cacheDir && typeof ttl === "number" && canUsePublicCache(request)) {
           const cached = await getCachedHtml(options.cacheDir, cacheKey);
           if (cached) {
             body = extractBody(cached.html);
@@ -185,20 +166,15 @@ export async function createSsrServer(options: SsrServerOptions): Promise<SsrSer
     }
 
     // Run middleware before routing (skip for internal endpoints handled above).
+    let middlewareHeaders: Record<string, string> | undefined;
     if (middleware && matchesMiddleware(urlPath, middleware.config)) {
-      const headers = new Headers();
-      const cookie = req.headers["cookie"];
-      if (cookie) headers.set("Cookie", cookie);
-      const mwRequest = new Request(`http://${req.headers.host ?? "localhost"}${req.url}`, {
-        method: req.method,
-        headers,
-      });
-      const mwResult = await runMiddleware(middleware, mwRequest);
+      const mwResult = await runMiddleware(middleware, incomingMessageToRequest(req));
       if (mwResult.kind === "response") {
         res.writeHead(mwResult.response.status, Object.fromEntries(mwResult.response.headers.entries()));
         res.end(Buffer.from(await mwResult.response.arrayBuffer()));
         return;
       }
+      middlewareHeaders = mwResult.headers;
     }
 
     // Try API routes first.
@@ -216,18 +192,8 @@ export async function createSsrServer(options: SsrServerOptions): Promise<SsrSer
           return;
         }
         const body = req.method && req.method !== "GET" && req.method !== "HEAD" ? await readRequestBody(req) : undefined;
-        const headers = new Headers();
-        const contentType = req.headers["content-type"];
-        const accept = req.headers["accept"];
-        const cookie = req.headers["cookie"];
-        if (contentType) headers.set("Content-Type", contentType);
-        if (accept) headers.set("Accept", accept);
-        if (cookie) headers.set("Cookie", cookie);
-        const request = new Request(`http://${req.headers.host ?? "localhost"}${req.url}`, {
-          method: req.method,
-          headers,
-          body,
-        });
+        const request = incomingMessageToRequest(req, body);
+        applyHeaders(request.headers, middlewareHeaders);
         const response = (await handler(request, { params: apiMatch.params })) as Response;
         res.writeHead(response.status, Object.fromEntries(response.headers.entries()));
         res.end(Buffer.from(await response.arrayBuffer()));
@@ -254,17 +220,8 @@ export async function createSsrServer(options: SsrServerOptions): Promise<SsrSer
     const config = { lang: options.lang ?? "es", clientEntry: options.clientEntry };
     if (match) {
       try {
-        const headers = new Headers();
-        const contentType = req.headers["content-type"];
-        const accept = req.headers["accept"];
-        const cookie = req.headers["cookie"];
-        if (contentType) headers.set("Content-Type", contentType);
-        if (accept) headers.set("Accept", accept);
-        if (cookie) headers.set("Cookie", cookie);
-        const request = new Request(`http://${req.headers.host ?? "localhost"}${req.url}`, {
-          method: req.method,
-          headers,
-        });
+        const request = incomingMessageToRequest(req);
+        applyHeaders(request.headers, middlewareHeaders);
 
         let html: string;
         let clearActionErrorCookie: string | undefined;
@@ -282,8 +239,9 @@ export async function createSsrServer(options: SsrServerOptions): Promise<SsrSer
             actions: publicActions,
             request,
           });
-        } else if (options.cacheDir && typeof ttl === "number") {
-          const cached = await getCachedHtml(options.cacheDir, urlPath);
+        } else if (options.cacheDir && typeof ttl === "number" && canUsePublicCache(request)) {
+          const cacheKey = new URL(request.url).pathname + new URL(request.url).search;
+          const cached = await getCachedHtml(options.cacheDir, cacheKey);
           if (cached) {
             html = cached.html;
           } else {
@@ -297,7 +255,7 @@ export async function createSsrServer(options: SsrServerOptions): Promise<SsrSer
             });
             html = result.html;
             clearActionErrorCookie = result.clearActionErrorCookie;
-            await setCachedHtml(options.cacheDir, urlPath, html, ttl);
+            await setCachedHtml(options.cacheDir, cacheKey, html, ttl);
           }
         } else {
           const result = await renderPage({
@@ -377,32 +335,21 @@ async function tryServeStatic(
   publicDir: string,
   urlPath: string,
 ): Promise<boolean> {
-  let filePath = join(publicDir, urlPath);
-  try {
-    const s = await stat(filePath);
-    if (s.isDirectory()) {
-      filePath = join(filePath, "index.html");
-    }
-  } catch (err) {
-    const code = (err as NodeJS.ErrnoException).code;
-    if (code === "ENOENT") {
-      // Try clean URL fallback (e.g. /about -> /about/index.html)
-      try {
-        const indexPath = join(filePath, "index.html");
-        await stat(indexPath);
-        filePath = indexPath;
-      } catch {
-        return false;
-      }
-    } else {
-      throw err;
-    }
-  }
-
+  const filePath = await resolveStaticFile(publicDir, urlPath);
+  if (!filePath) return false;
   const data = await readFile(filePath);
   res.writeHead(200, { "Content-Type": guessContentType(filePath) });
   res.end(data);
   return true;
+}
+
+function canUsePublicCache(request: Request): boolean {
+  return !request.headers.has("cookie") && !request.headers.has("authorization");
+}
+
+function applyHeaders(headers: Headers, values: Record<string, string> | undefined): void {
+  if (!values) return;
+  for (const [name, value] of Object.entries(values)) headers.set(name, value);
 }
 
 function readRequestBody(req: IncomingMessage): Promise<string> {
@@ -435,6 +382,18 @@ function guessContentType(filePath: string): string {
     case ".jpg":
     case ".jpeg":
       return "image/jpeg";
+    case ".webp":
+      return "image/webp";
+    case ".avif":
+      return "image/avif";
+    case ".ico":
+      return "image/x-icon";
+    case ".woff":
+      return "font/woff";
+    case ".woff2":
+      return "font/woff2";
+    case ".wasm":
+      return "application/wasm";
     default:
       return "application/octet-stream";
   }

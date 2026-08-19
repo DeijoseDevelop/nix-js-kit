@@ -1,4 +1,4 @@
-import type { NixTemplate } from "@deijose/nix-js";
+import { NIX_RENDER_PROTOCOL, type NixTemplate, type ServerRenderProtocolContext } from "@deijose/nix-js";
 
 // =============================================================================
 // --- Islands helper ---
@@ -15,7 +15,7 @@ import type { NixTemplate } from "@deijose/nix-js";
 export type IslandDirective = "load" | "idle" | "visible";
 
 export interface IslandComponent<TProps = unknown> {
-  (props: TProps): NixTemplate;
+  (props: TProps): NixTemplate | null | false | undefined;
 }
 
 /**
@@ -33,30 +33,36 @@ export function island<TProps>(
   props: TProps,
   directive: IslandDirective = "load",
 ): NixTemplate {
-  // Render the component to a string synchronously. We create a temporary
-  // container, render into it, and read innerHTML. This is server-side only.
-  // `_render` returns a dispose function; we call it after reading innerHTML so
-  // the island's effects don't stay subscribed after SSR (which would crash
-  // when async signal writes re-render into a torn-down DOM).
-  const container = document.createElement("div");
-  const dispose = component(props)._render(container, null);
-  const innerHtml = container.innerHTML;
-  if (typeof dispose === "function") dispose();
-
-  const markerHtml = `<div data-nix-js-island="${escapeHtml(name)}" data-directive="${directive}" data-props='${serializeProps(props)}'>${innerHtml}</div>`;
+  const markerHtml = (innerHtml: string) =>
+    `<div data-nix-js-island="${escapeHtml(name)}" data-directive="${directive}" data-props='${serializeProps(props)}'>${innerHtml}</div>`;
 
   return {
     __isNixTemplate: true as const,
+    [NIX_RENDER_PROTOCOL]: {
+      async renderServer(context: ServerRenderProtocolContext) {
+        const template = component(props);
+        const innerHtml = template === null || template === false || template === undefined
+          ? ""
+          : await context.render(template, { markers: true });
+        return markerHtml(innerHtml);
+      },
+    },
     _render(parent: Node, before: Node | null): () => void {
+      const container = document.createElement("div");
+      const template = component(props);
+      let innerHtml = "";
+      if (template !== null && template !== false && template !== undefined) {
+        const dispose = template._render(container, null);
+        innerHtml = container.innerHTML;
+        dispose();
+      }
       const wrapper = document.createElement("template");
-      wrapper.innerHTML = markerHtml;
+      wrapper.innerHTML = markerHtml(innerHtml);
       const fragment = wrapper.content;
       const inserted = fragment.firstChild;
       parent.insertBefore(fragment, before);
       return () => {
-        if (inserted?.parentNode) {
-          inserted.parentNode.removeChild(inserted);
-        }
+        if (inserted?.parentNode) inserted.parentNode.removeChild(inserted);
       };
     },
   } as unknown as NixTemplate;

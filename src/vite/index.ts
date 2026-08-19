@@ -11,6 +11,7 @@ import { renderPage, renderErrorPage } from "../ssr/render.js";
 import { setContentRoot, clearContentCache } from "../content/collections.js";
 import { loadMiddleware, matchesMiddleware, runMiddleware, type LoadedMiddleware } from "../middleware/index.js";
 import { nixJsInterpolationPlugin } from "./interpolation-plugin.js";
+import { incomingMessageToRequest } from "../runtime/node-http.js";
 
 export interface NixJsKitViteOptions {
   /** App directory relative to Vite root (default: src/app). */
@@ -93,24 +94,14 @@ export function nixJsKit(options: NixJsKitViteOptions = {}): Plugin[] {
       });
 
       server.middlewares.use(async (req, res, next) => {
-        const urlPath = req.url ?? "/";
+        const requestUrl = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`);
+        const urlPath = requestUrl.pathname;
 
         // Server actions endpoint.
         if (urlPath === "/__nix-js/actions" && req.method === "POST") {
           try {
             const body = await readRequestBody(req);
-            const headers = new Headers();
-            const contentType = req.headers["content-type"];
-            const accept = req.headers["accept"];
-            const cookie = req.headers["cookie"];
-            if (contentType) headers.set("Content-Type", contentType);
-            if (accept) headers.set("Accept", accept);
-            if (cookie) headers.set("Cookie", cookie);
-            const request = new Request(`http://${req.headers.host ?? "localhost"}${req.url}`, {
-              method: "POST",
-              headers,
-              body,
-            });
+            const request = incomingMessageToRequest(req, body);
             const response = await handleActionRequest(request, resolveAction, options.actionSecurity);
             res.writeHead(response.status, Object.fromEntries(response.headers.entries()));
             res.end(await response.text());
@@ -143,10 +134,10 @@ export function nixJsKit(options: NixJsKitViteOptions = {}): Plugin[] {
         if (urlPath === "/__nix-js/render") {
           const { renderPageBody, RouteNotFoundError } = await import("../ssr/stream.js");
           try {
-            const renderUrl = new URL(req.url ?? "/", "http://localhost");
-            const page = renderUrl.searchParams.get("page") ?? "/";
-            const search = renderUrl.searchParams.get("search") ?? "";
+            const page = requestUrl.searchParams.get("page") ?? "/";
+            const search = requestUrl.searchParams.get("search") ?? "";
             const wantsJson = (req.headers["accept"] ?? "").includes("application/json");
+            const request = incomingMessageToRequest(req);
             const { body, title, head, clearActionErrorCookie } = await renderPageBody({
               routes: currentRoutes,
               pathname: page,
@@ -154,6 +145,7 @@ export function nixJsKit(options: NixJsKitViteOptions = {}): Plugin[] {
               config: { lang, clientEntry },
               actions: actionNames(currentActions),
               importer: ssrLoad,
+              request,
             });
             if (wantsJson) {
               const headers: Record<string, string> = { "Content-Type": "application/json; charset=utf-8" };
@@ -184,7 +176,10 @@ export function nixJsKit(options: NixJsKitViteOptions = {}): Plugin[] {
           const apiMatch = matchApiRoute(urlPath, currentRoutes.api);
           if (apiMatch) {
             try {
-              const mod = (await ssrLoad(apiMatch.route.routePath)) as Record<string, (request: Request) => unknown>;
+              const mod = (await ssrLoad(apiMatch.route.routePath)) as Record<
+                string,
+                (request: Request, context?: { params: Record<string, string | string[]> }) => unknown
+              >;
               const handler = mod[req.method ?? "GET"];
               if (typeof handler !== "function") {
                 res.writeHead(405, { "Content-Type": "text/plain" });
@@ -192,19 +187,8 @@ export function nixJsKit(options: NixJsKitViteOptions = {}): Plugin[] {
                 return;
               }
               const body = req.method && req.method !== "GET" && req.method !== "HEAD" ? await readRequestBody(req) : undefined;
-              const headers = new Headers();
-              const contentType = req.headers["content-type"];
-              const accept = req.headers["accept"];
-              const cookie = req.headers["cookie"];
-              if (contentType) headers.set("Content-Type", contentType);
-              if (accept) headers.set("Accept", accept);
-              if (cookie) headers.set("Cookie", cookie);
-              const request = new Request(`http://${req.headers.host ?? "localhost"}${req.url}`, {
-                method: req.method,
-                headers,
-                body,
-              });
-              const response = (await handler(request)) as Response;
+              const request = incomingMessageToRequest(req, body);
+              const response = (await handler(request, { params: apiMatch.params })) as Response;
               res.writeHead(response.status, Object.fromEntries(response.headers.entries()));
               res.end(Buffer.from(await response.arrayBuffer()));
             } catch (err) {
@@ -217,20 +201,15 @@ export function nixJsKit(options: NixJsKitViteOptions = {}): Plugin[] {
         }
 
         // Run middleware before SSR rendering.
+        let middlewareHeaders: Record<string, string> | undefined;
         if (middleware && matchesMiddleware(urlPath, middleware.config)) {
-          const mwHeaders = new Headers();
-          const cookie = req.headers["cookie"];
-          if (cookie) mwHeaders.set("Cookie", cookie);
-          const mwRequest = new Request(`http://${req.headers.host ?? "localhost"}${req.url}`, {
-            method: req.method,
-            headers: mwHeaders,
-          });
-          const mwResult = await runMiddleware(middleware, mwRequest);
+          const mwResult = await runMiddleware(middleware, incomingMessageToRequest(req));
           if (mwResult.kind === "response") {
             res.writeHead(mwResult.response.status, Object.fromEntries(mwResult.response.headers.entries()));
             res.end(Buffer.from(await mwResult.response.arrayBuffer()));
             return;
           }
+          middlewareHeaders = mwResult.headers;
         }
 
         const handled = await handleSsrRequest(req, res, next, {
@@ -239,6 +218,7 @@ export function nixJsKit(options: NixJsKitViteOptions = {}): Plugin[] {
           clientEntry,
           lang,
           ssrLoad,
+          middlewareHeaders,
         });
         if (!handled) next();
       });
@@ -362,6 +342,7 @@ interface SsrHandlerOptions {
   clientEntry: string;
   lang: string;
   ssrLoad: (path: string) => Promise<unknown>;
+  middlewareHeaders?: Record<string, string>;
 }
 
 async function handleSsrRequest(
@@ -388,13 +369,10 @@ async function handleSsrRequest(
   const match = matchRoute(urlPath, options.routes.pages);
   if (match) {
     try {
-      const reqHeaders = new Headers();
-      const cookie = req.headers["cookie"];
-      if (cookie) reqHeaders.set("Cookie", cookie);
-      const request = new Request(`http://${req.headers.host ?? "localhost"}${req.url}`, {
-        method: req.method,
-        headers: reqHeaders,
-      });
+      const request = incomingMessageToRequest(req);
+      if (options.middlewareHeaders) {
+        for (const [name, value] of Object.entries(options.middlewareHeaders)) request.headers.set(name, value);
+      }
       const { html, clearActionErrorCookie } = await renderPage({
         route: match.route,
         params: match.params,

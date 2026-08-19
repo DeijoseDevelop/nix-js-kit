@@ -42,7 +42,7 @@ function resolveEndpointAvailability(): Promise<boolean> {
       url.searchParams.set("page", "/");
       try {
         const response = await fetch(url.toString(), {
-          headers: { Accept: "application/json" },
+          headers: { Accept: "application/json", "X-Nix-Probe": "1" },
         });
         renderEndpointAvailable = response.ok;
         return response.ok;
@@ -110,7 +110,7 @@ function setCached(key: string, payload: RenderPayload): void {
  * On static deployments (no `/__nix-js/render` endpoint), falls back to
  * fetching the full HTML page and extracting `#app` + `<head>` tags.
  */
-async function fetchPayload(pathname: string, search: string): Promise<RenderPayload | undefined> {
+async function fetchPayload(pathname: string, search: string, signal?: AbortSignal): Promise<RenderPayload | undefined> {
   const key = cacheKey(pathname, search);
   const cached = getCached(key);
   if (cached) return cached;
@@ -119,7 +119,7 @@ async function fetchPayload(pathname: string, search: string): Promise<RenderPay
   // request against the endpoint (the rest go straight to the HTML fallback).
   if (renderEndpointAvailable) {
     if (await resolveEndpointAvailability()) {
-      const payload = await fetchFromRenderEndpoint(pathname, search);
+      const payload = await fetchFromRenderEndpoint(pathname, search, signal);
       if (payload) {
         setCached(key, payload);
         return payload;
@@ -130,7 +130,7 @@ async function fetchPayload(pathname: string, search: string): Promise<RenderPay
   }
 
   // Static fallback: fetch the full HTML page and extract #app + head.
-  const payload = await fetchFromHtml(pathname, search);
+  const payload = await fetchFromHtml(pathname, search, signal);
   if (payload) {
     setCached(key, payload);
   }
@@ -138,7 +138,7 @@ async function fetchPayload(pathname: string, search: string): Promise<RenderPay
 }
 
 /** Attempts to fetch from the `/__nix-js/render` JSON endpoint. */
-async function fetchFromRenderEndpoint(pathname: string, search: string): Promise<RenderPayload | undefined> {
+async function fetchFromRenderEndpoint(pathname: string, search: string, signal?: AbortSignal): Promise<RenderPayload | undefined> {
   const url = new URL("/__nix-js/render", location.origin);
   url.searchParams.set("page", pathname);
   const current = new URL(location.href);
@@ -146,8 +146,9 @@ async function fetchFromRenderEndpoint(pathname: string, search: string): Promis
 
   let response: Response;
   try {
-    response = await fetch(url.toString(), { headers: { Accept: "application/json" } });
-  } catch {
+    response = await fetch(url.toString(), { headers: { Accept: "application/json" }, signal });
+  } catch (err) {
+    if (err instanceof DOMException && err.name === "AbortError") return undefined;
     return undefined;
   }
   if (!response.ok) return undefined;
@@ -166,12 +167,13 @@ async function fetchFromRenderEndpoint(pathname: string, search: string): Promis
  * the `#app` innerHTML plus managed `<head>` tags (`[data-nix-js-head]`).
  * Also extracts `<title>`, stylesheets, and headLinks for SPA navigation.
  */
-async function fetchFromHtml(pathname: string, search: string): Promise<RenderPayload | undefined> {
+async function fetchFromHtml(pathname: string, search: string, signal?: AbortSignal): Promise<RenderPayload | undefined> {
   const fullUrl = pathname + (search || "");
   let response: Response;
   try {
-    response = await fetch(fullUrl, { headers: { Accept: "text/html" } });
-  } catch {
+    response = await fetch(fullUrl, { headers: { Accept: "text/html" }, signal });
+  } catch (err) {
+    if (err instanceof DOMException && err.name === "AbortError") return undefined;
     return undefined;
   }
   if (!response.ok) return undefined;
@@ -247,6 +249,26 @@ function supportsViewTransitions(): boolean {
 // =============================================================================
 
 /**
+ * Guard against concurrent navigations. When a navigation is in-flight, a new
+ * request cancels the previous one (abort + ignore its result). This prevents
+ * race conditions where two rapid clicks could swap content out of order.
+ */
+let inFlightNavigation: {
+  controller: AbortController;
+  pathname: string;
+} | null = null;
+
+/**
+ * Cancels any in-flight navigation so a new one can proceed cleanly.
+ */
+function cancelInFlightNavigation(): void {
+  if (inFlightNavigation) {
+    inFlightNavigation.controller.abort();
+    inFlightNavigation = null;
+  }
+}
+
+/**
  * Hoists `<link rel="stylesheet">` and `<style>` tags from inside `#app` into
  * `<head>` so they persist across SPA navigations (prevents FOUC/flashing).
  * Deduplicates by `href` for links and by text content for styles.
@@ -285,11 +307,87 @@ export function hoistStyles(container: ParentNode): void {
 }
 
 /**
+ * Announces a route change to assistive technology via an aria-live region.
+ * This is critical for screen reader users who need to know the page content
+ * has changed after a SPA navigation.
+ */
+function announceNavigation(pathname: string): void {
+  let liveRegion = document.getElementById("nix-js-route-announcer");
+  if (!liveRegion) {
+    liveRegion = document.createElement("div");
+    liveRegion.id = "nix-js-route-announcer";
+    liveRegion.setAttribute("aria-live", "assertive");
+    liveRegion.setAttribute("aria-atomic", "true");
+    liveRegion.setAttribute("role", "status");
+    // Visually hidden but available to screen readers.
+    liveRegion.setAttribute("style", "position:absolute;left:-9999px;width:1px;height:1px;overflow:hidden;");
+    document.body.appendChild(liveRegion);
+  }
+  // Clear and re-set so screen readers announce the change.
+  liveRegion.textContent = "";
+  // Use a microtask delay so the DOM update is picked up by AT.
+  // Guard against the document being torn down (e.g. in tests).
+  const region = liveRegion;
+  const timer = setTimeout(() => {
+    if (typeof document !== "undefined" && region) {
+      const title = document.title || pathname;
+      region.textContent = title;
+    }
+  }, 50);
+  // Don't keep the process alive just for the announcer.
+  if (typeof timer === "object" && timer && "unref" in timer) {
+    (timer as { unref: () => void }).unref();
+  }
+}
+
+/**
+ * Moves focus to the main content area after a SPA navigation. This follows
+ * the WAI-ARIA pattern for route changes: if the #app has a tabindex=-1, focus
+ * it; otherwise create a temporary focus target.
+ */
+function moveFocusToContent(): void {
+  const app = document.getElementById("app");
+  if (!app) return;
+  // Ensure the container is focusable.
+  if (!app.hasAttribute("tabindex")) {
+    app.setAttribute("tabindex", "-1");
+  }
+  // Remove outline only for mouse users; keyboard users keep it.
+  app.focus({ preventScroll: false });
+}
+
+/**
+ * Updates the canonical URL and og:url meta tags after navigation.
+ */
+function updateCanonicalUrl(pathname: string, search: string): void {
+  const fullUrl = location.origin + pathname + (search || "");
+  // Update or create canonical link.
+  let canonical = document.querySelector<HTMLLinkElement>('link[rel="canonical"]');
+  if (!canonical) {
+    canonical = document.createElement("link");
+    canonical.rel = "canonical";
+    document.head.appendChild(canonical);
+  }
+  canonical.href = fullUrl;
+  // Update og:url meta.
+  let ogUrl = document.querySelector<HTMLMetaElement>('meta[property="og:url"]');
+  if (!ogUrl) {
+    ogUrl = document.createElement("meta");
+    ogUrl.setAttribute("property", "og:url");
+    document.head.appendChild(ogUrl);
+  }
+  ogUrl.content = fullUrl;
+}
+
+/**
  * Navigates to a page without a full reload: fetches the fresh body from the
  * `/__nix-js/render` endpoint, swaps `#app`, updates the document title and
  * dispatches `nix-js:rendered` so islands re-hydrate. Used by the router on
  * clicks and available for programmatic navigation (e.g. after a server
  * action returns a redirect, so the target page shows fresh server data).
+ *
+ * Concurrent navigations are handled: a new navigateTo() cancels any
+ * in-flight navigation to prevent out-of-order content swaps.
  *
  * @param pathname Path without query, e.g. "/movies/inception".
  * @param search Query string, e.g. "?reviewed=1" (optional).
@@ -297,7 +395,26 @@ export function hoistStyles(container: ParentNode): void {
  * @returns true on success, false if the render failed.
  */
 export async function navigateTo(pathname: string, search = "", push = true): Promise<boolean> {
-  const payload = await fetchPayload(pathname, search);
+  // Cancel any previous in-flight navigation to prevent race conditions.
+  cancelInFlightNavigation();
+
+  const controller = new AbortController();
+  inFlightNavigation = { controller, pathname };
+
+  let payload: RenderPayload | undefined;
+  try {
+    payload = await fetchPayload(pathname, search, controller.signal);
+  } catch (err) {
+    if (controller.signal.aborted) return false; // superseded by a newer nav
+    throw err;
+  }
+
+  // If a newer navigation started while we were fetching, bail out.
+  if (inFlightNavigation && inFlightNavigation.controller !== controller) {
+    if (controller.signal.aborted) return false;
+  }
+  inFlightNavigation = null;
+
   if (!payload) return false;
 
   const app = document.getElementById("app");
@@ -347,6 +464,16 @@ export async function navigateTo(pathname: string, search = "", push = true): Pr
       const newEl = app.querySelector(`[data-scroll-preserve="${s.el.getAttribute("data-scroll-preserve")}"]`);
       if (newEl) newEl.scrollTop = s.top;
     }
+
+    // Update canonical URL and OG tags for the new route.
+    updateCanonicalUrl(pathname, search);
+
+    // Announce the navigation to screen readers.
+    announceNavigation(pathname);
+
+    // Move focus to the main content for keyboard/screen reader users.
+    // Only on push (forward navigation), not on back/forward (popstate).
+    if (push) moveFocusToContent();
 
     document.dispatchEvent(new CustomEvent("nix-js:rendered"));
   };
@@ -519,3 +646,19 @@ export function startClientRouter(): void {
 
   setupLinkPrefetch();
 }
+
+// =============================================================================
+// --- Test helpers (not part of the public API) ---
+// =============================================================================
+
+/**
+ * Resets all internal router state. Intended for test isolation only.
+ * @internal
+ */
+export function __resetRouterState(): void {
+  prefetchCache.clear();
+  inFlightNavigation = null;
+  renderEndpointAvailable = true;
+  endpointProbe = null;
+}
+

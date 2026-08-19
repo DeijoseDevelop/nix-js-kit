@@ -10,6 +10,8 @@ export interface AdapterOptions {
   islandsDir: string;
   /** Output directory relative to root (default: dist). */
   outDir: string;
+  /** Public directory relative to root (default: public). */
+  publicDir?: string;
   /** Public path for the client entry module (default: /_nix-js/entry-client.js). */
   clientEntry: string;
   /** HTML lang attribute (default: es). */

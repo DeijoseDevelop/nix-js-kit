@@ -187,7 +187,18 @@ export interface JsonLdSchema {
  */
 export function jsonLd(schema: JsonLdSchema | JsonLdSchema[]): string {
   const data = JSON.stringify(Array.isArray(schema) ? schema : schema);
-  return `<script type="application/ld+json">${data}</script>`;
+  // Escape sequences that could close the <script> tag or introduce markup.
+  // Per the HTML spec, inside a <script> block the only dangerous sequence
+  // is "</script" (case-insensitive). We also escape "<" more broadly to
+  // prevent any interpreter from seeing markup-like content, and escape
+  // "<!--" to prevent HTML comment-based escapes.
+  const safe = data
+    .replace(/</g, "\\u003c")
+    .replace(/>/g, "\\u003e")
+    .replace(/&/g, "\\u0026")
+    .replace(/\u2028/g, "\\u2028")
+    .replace(/\u2029/g, "\\u2029");
+  return `<script type="application/ld+json">${safe}</script>`;
 }
 
 // ---------------------------------------------------------------------------

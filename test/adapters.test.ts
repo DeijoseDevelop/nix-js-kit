@@ -185,6 +185,10 @@ describe("adapters", () => {
       });
       assert.equal(post.status, 201);
       assert.deepEqual(await post.json(), { id: 2, title: "New" });
+
+      const dynamic = await fetch("http://127.0.0.1:3464/api/posts/42");
+      assert.equal(dynamic.status, 200);
+      assert.deepEqual(await dynamic.json(), { id: "42" });
     } finally {
       child.kill();
     }

@@ -1,6 +1,71 @@
 # Changelog
 
-All notable changes to `@deijose/nix-js-kit` will be documented in this file.
+All notable changes to Nix.js Kit are documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+
+## [Unreleased] — v2 development
+
+### Added — Phase 13: Verification, packaging, audit, benchmarks
+
+- **Package smoke test** — `test/package-smoke.test.ts` validates tarball creation, ESM/CJS entry imports, CLI binary, exports map, Node engine, and tarball contents (no src/test/scripts leaked).
+- **Path traversal fuzz tests** — `test/path-traversal-fuzz.test.ts` (20 tests) covers encoded traversal (`%2e%2e`, `%2f`, `%5c`), mixed separators, NUL bytes, Unicode normalization (U+FF0E, U+FF0F), prefix-sibling paths, and symlink escape (A-06).
+- **CSRF cross-origin tests** — `test/csrf-origin.test.ts` (19 tests) covers same-origin, cross-origin, missing headers, `strictOrigin` mode, allow-list, invalid headers, non-HTTP protocols, and `Sec-Fetch-Site` (A-07).
+- **Cache concurrency + isolation tests** — `test/cache-concurrency.test.ts` (13 tests) covers single-flight deduplication, stale-while-revalidate, private/public isolation (cookies, Authorization, no-store), atomicity, collision resistance, and tag invalidation (A-08).
+- **SSR benchmark baseline** — `test/benchmark-ssr.test.ts` measures `renderToString` throughput (126,940 renders/sec on the test machine) with a budget floor of 500 renders/sec for regression detection.
+- **RequestContext tests** — `test/request-context.test.ts` (17 tests) verifies per-request state: `params`, `locals` isolation, `cookies` (read/write), `signal`, `requestId` uniqueness, `platform`, `response` state, and `applyToResponse()` merging.
+- **`bun audit`** — zero vulnerabilities after lockfile cleanup (A-24).
+- **`publint`** — `All good!` after splitting `types` conditions into `import`/`require` and adding `.d.cts` declaration copies.
+- **Pendientes documentados** — `docs/nix-js-kit/pendientes-infraestructura.md` lista los items que requieren infraestructura externa (Playwright E2E, CI matrix, Provenance/SBOM, `arethetypeswrong`, examples, Lighthouse).
+
+### Changed — Phase 13
+
+- **`RequestContext` aligned with runtime-security §4** — added `params`, `locals`, `cookies` (CookieJar), `signal` (AbortSignal), `requestId` (auto-generated UUID), `platform`, `route`, and `response` (ResponseState with mutable headers and ResponseCookieJar). New `applyToResponse()` method merges accumulated headers, Set-Cookie values, and status into the final Response. New types: `CookieJar`, `ResponseCookieJar`, `CookieOptions`, `ResponseState`.
+- **`handleApiRoute`** now passes `locals` alongside `params` to API route handlers.
+- **`src/runtime/index.ts`** exports the new cookie and response types.
+- **`defineAction`** and related types now exported from `src/index.ts` (main entry).
+
+### Added — Phase 10: Actions, middleware, cookies, cache/ISR
+
+- **`defineAction()`** — typed server action definition with input validation (`.parse()`), AbortSignal propagation, idempotency metadata, and concurrency modes (`latest`, `queue`, `parallel`). Legacy action exports preserved.
+- **`CacheAdapter`** — filesystem cache with SHA-256 identity keys, atomic temp+rename writes, single-flight per process, stale-while-revalidate (`getWithSWR()`), tag-based invalidation, size limits and periodic cleanup.
+- **Cache policy per route** — `CachePolicy` with `public`/`private`/`dynamic` modes, `normalizeCachePolicy()` reads `export const cache` from data modules, `shouldCachePublic()` enforces no public caching for requests with cookies/auth/action-state.
+- **Middleware propagation** — `next()` now carries `params` and `locals`, cleanup callbacks executed in `finally`, `loadMiddleware()` distinguishes "file not found" from "file has errors".
+- **Cache invalidation hub** — `CacheInvalidator` pub/sub with `connectCacheAdapter()`, `defaultInvalidator` singleton. Actions emit tags/paths; cache listens. No coupling to `nix-query`.
+
+### Added — Phase 11: Streaming, routing, content, SEO, integrations
+
+- **Real streaming** — `createStreamingResponse()` with `ReadableStream` that sends shell + loading fallback, then resolved content chunks with deterministic IDs. `createBufferedResponse()` for adapters without streaming. `streamBoundary` uses `AsyncLocalStorage` per-request.
+- **Optional catch-all** — `[[...slug]]` route segments that match the base path and any depth.
+- **Route conflict detection** — `scanRoutes()` throws on duplicate path patterns during manifest generation.
+- **Safe URL decoding** — `safeDecodeURIComponent()` handles malformed percent-encoding without throwing.
+- **Redirects/rewrites/route headers** — `matchRedirect()`, `matchRewrite()`, `matchRouteHeaders()` with `:param` and `*` wildcard support.
+- **Sitemap from route manifest** — `generateSitemapFromRoutes()` excludes dynamic/API/error routes, supports `extraUrls` for dynamic routes, splits into sitemap index for >50,000 URLs.
+- **Content scope per request** — `withContentRoot()` via `AsyncLocalStorage`, cache key includes root, collection name containment validation (no path traversal).
+- **Integration hooks** — typed registry for `I18nIntegration`, `AuthIntegration`, `QueryIntegration`, `TestingIntegration` + custom integrations. Optional packages register without being dependencies.
+
+### Added — Phase 12: DX, scaffold, observability
+
+- **CLI commands** — `check` (typecheck + route/config integrity), `routes` (list all discovered routes), `doctor` (diagnose common issues).
+- **Structured logger** — `StructuredLogger` with request ID generation, `Server-Timing` header accumulation, sensitive data redaction (cookies, auth headers), structured JSON output in production.
+- **Error messages** — `formatError()` with cause/path/suggestion format, reliable exit codes (`ExitCode`).
+- **create-nix-app template** — `template-kit` with config, public, islands, content, tests, adapter-ready scripts.
+
+### Security hardening (Phase 10)
+
+- JSON-LD escapes `<`, `>`, `&`, U+2028, U+2029 to prevent script injection (A-19).
+- Action error cookies signed with HMAC SHA-256 (A-20).
+- Body limits enforced with stream reading and `413` responses (§8.2).
+- Default security headers: `X-Content-Type-Options`, `Referrer-Policy`, `X-Frame-Options`, CSP with nonce support, HSTS when appropriate, Permissions-Policy.
+- Static serving with `ETag`/`If-None-Match`, `Last-Modified`/`If-Modified-Since`, immutable caching for hashed assets.
+- `throw new Response()` treated as first-class HTTP control flow from loaders and layout loaders (A-22).
+- No public caching of responses with `Set-Cookie`, `private`, or `no-store`.
+
+---
+
+## [1.x] — Release history
 
 ## 1.4.8
 

@@ -25,6 +25,7 @@ export {
   getEntries,
   renderEntryHTML,
   setContentRoot,
+  withContentRoot,
   clearContentCache,
   type CollectionDefinition,
   type CollectionsConfig,

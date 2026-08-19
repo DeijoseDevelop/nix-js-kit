@@ -1,12 +1,12 @@
-import { mkdir, writeFile } from "node:fs/promises";
+import { cp, mkdir, stat, writeFile } from "node:fs/promises";
 import { join, dirname } from "node:path";
 import { scanRoutes, type PageRoute, type ScannedRoutes } from "../router/route-scanner.js";
 import { scanIslands, type IslandModule } from "../island/scan.js";
 import { generateClientEntry } from "../island/generate-entry.js";
 import { renderPage, renderErrorPage } from "../ssr/render.js";
 import { scanActions, actionNames } from "../action/scan.js";
-import { consumeImageRegistry, type ImageFormat } from "../image/index.js";
-import { processImages } from "../image/pipeline.js";
+import { consumeImageRegistry, setImageManifest, type ImageFormat } from "../image/index.js";
+import { processImageBatch, type ImageManifest } from "../image/service.js";
 import type { RouteParams, GenerateStaticParams } from "../types.js";
 
 // =============================================================================
@@ -116,6 +116,17 @@ function buildConcreteUrl(path: string, params: RouteParams): string {
  * @returns Summary of generated files.
  */
 export async function build(config: BuildConfig): Promise<BuildResult> {
+  if (config.publicDir) {
+    try {
+      if ((await stat(config.publicDir)).isDirectory()) {
+        await mkdir(config.outDir, { recursive: true });
+        await cp(config.publicDir, config.outDir, { recursive: true, force: true });
+      }
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    }
+  }
+
   const routes = await scanRoutes(config.appDir);
   const actions = await scanActions(config.appDir);
   // Only action names are serialized into the HTML shell; full paths stay on the server.
@@ -186,16 +197,81 @@ export async function build(config: BuildConfig): Promise<BuildResult> {
     }
   }
 
-  // Process registered images with sharp (if installed).
+  // Process registered images with the ImageService (if sharp is installed).
+  // This is a two-pass process:
+  //   1. First render pass registers all images (already done above).
+  //   2. Process registered images → produce manifest.
+  //   3. If variants were generated, set the manifest and re-render pages
+  //      so the markup uses real <picture>/<source> with hashed URLs.
   const registeredImages = consumeImageRegistry();
+  let manifest: ImageManifest | null = null;
   if (registeredImages.length > 0 && config.publicDir) {
-    const processed = await processImages(registeredImages, {
+    const manifestPath = join(config.outDir, ".nix-js", "image-manifest.json");
+    const processResult = await processImageBatch(registeredImages, {
       publicDir: config.publicDir,
       outDir: config.outDir,
       formats: config.imageFormats,
+      manifestPath,
     });
-    result.imagesProcessed = processed.reduce((sum, p) => sum + p.variants.length, 0);
+    result.imagesProcessed = processResult.count;
+
+    if (processResult.optimized && processResult.count > 0) {
+      manifest = processResult.manifest;
+      setImageManifest(manifest);
+
+      // Re-render all pages with the manifest so image() emits <picture>.
+      result.pages = 0;
+      result.files = [];
+      for (const route of routes.pages) {
+        if (!isDynamic(route.path)) {
+          const filePath = await buildPage(config, route, publicActions);
+          result.pages++;
+          result.files.push(filePath);
+          continue;
+        }
+        const dynamicFiles = await buildDynamicPages(config, route, publicActions);
+        if (dynamicFiles.length === 0) {
+          result.skipped.push(route.path);
+        } else {
+          result.pages += dynamicFiles.length;
+          result.files.push(...dynamicFiles);
+        }
+      }
+
+      // Re-render error pages too.
+      if (routes.error404) {
+        const result404 = await renderErrorPage({
+          routes,
+          status: 404,
+          config: errorConfig,
+          actions: publicActions,
+        });
+        if (result404) {
+          const filePath = join(config.outDir, "404.html");
+          await mkdir(dirname(filePath), { recursive: true });
+          await writeFile(filePath, result404.html, "utf8");
+          result.files.push(filePath);
+        }
+      }
+      if (routes.error500) {
+        const result500 = await renderErrorPage({
+          routes,
+          status: 500,
+          config: errorConfig,
+          actions: publicActions,
+        });
+        if (result500) {
+          const filePath = join(config.outDir, "500.html");
+          await mkdir(dirname(filePath), { recursive: true });
+          await writeFile(filePath, result500.html, "utf8");
+          result.files.push(filePath);
+        }
+      }
+    }
   }
+
+  // Clear the manifest so subsequent builds start fresh.
+  setImageManifest(null);
 
   return result;
 }

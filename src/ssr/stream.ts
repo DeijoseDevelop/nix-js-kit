@@ -130,6 +130,8 @@ export interface RenderPageBodyResult {
   clearActionErrorCookie?: string;
   /** `<head>` tags (title, meta, OG, twitter) for the SPA router to merge. */
   head?: string;
+  /** First-class Response when a loader threw one (A-22). */
+  response?: Response;
 }
 
 /** Thrown by `renderPageBody` when the requested path has no matching route. */
@@ -160,6 +162,15 @@ export async function renderPageBody(options: RenderPageBodyOptions): Promise<Re
     importer,
     request,
   });
+
+  // If a loader threw a Response (redirect, 404, etc.), propagate it (A-22).
+  if (result.response) {
+    return {
+      body: "",
+      title: "",
+      response: result.response,
+    };
+  }
 
   const bodyMatch = result.html.match(/<div id="app">([\s\S]*)<\/div>\s*(<script|$)/);
   const body = bodyMatch ? bodyMatch[1].trim() : result.html;

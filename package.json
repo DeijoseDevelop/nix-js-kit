@@ -1,6 +1,6 @@
 {
   "name": "@deijose/nix-js-kit",
-  "version": "1.4.8",
+  "version": "2.0.0",
   "description": "Full-stack meta-framework for Nix.js — file-based routing, SSG and islands.",
   "license": "MIT",
   "author": "Deiver Vasquez",
@@ -24,74 +24,148 @@
   "types": "./dist/lib/index.d.ts",
   "exports": {
     ".": {
-      "types": "./dist/lib/index.d.ts",
+      "types": {
+        "import": "./dist/lib/index.d.ts",
+        "require": "./dist/lib/index.d.cts"
+      },
       "import": "./dist/lib/index.js",
       "require": "./dist/lib/index.cjs"
     },
     "./island": {
-      "types": "./dist/lib/island/index.d.ts",
+      "types": {
+        "import": "./dist/lib/island/index.d.ts",
+        "require": "./dist/lib/island/index.d.cts"
+      },
       "import": "./dist/lib/island/index.js",
       "require": "./dist/lib/island/index.cjs"
     },
     "./cli": {
-      "types": "./dist/lib/cli.d.ts",
+      "types": {
+        "import": "./dist/lib/cli.d.ts",
+        "require": "./dist/lib/cli.d.cts"
+      },
       "import": "./dist/lib/cli.js",
       "require": "./dist/lib/cli.cjs"
     },
     "./vite": {
-      "types": "./dist/lib/vite/index.d.ts",
+      "types": {
+        "import": "./dist/lib/vite/index.d.ts",
+        "require": "./dist/lib/vite/index.d.cts"
+      },
       "import": "./dist/lib/vite/index.js",
       "require": "./dist/lib/vite/index.cjs"
     },
     "./adapters": {
-      "types": "./dist/lib/adapters/index.d.ts",
+      "types": {
+        "import": "./dist/lib/adapters/index.d.ts",
+        "require": "./dist/lib/adapters/index.d.cts"
+      },
       "import": "./dist/lib/adapters/index.js",
       "require": "./dist/lib/adapters/index.cjs"
     },
     "./adapters/vercel": {
-      "types": "./dist/lib/adapters/vercel.d.ts",
+      "types": {
+        "import": "./dist/lib/adapters/vercel.d.ts",
+        "require": "./dist/lib/adapters/vercel.d.cts"
+      },
       "import": "./dist/lib/adapters/vercel.js",
       "require": "./dist/lib/adapters/vercel.cjs"
     },
     "./adapters/netlify": {
-      "types": "./dist/lib/adapters/netlify.d.ts",
+      "types": {
+        "import": "./dist/lib/adapters/netlify.d.ts",
+        "require": "./dist/lib/adapters/netlify.d.cts"
+      },
       "import": "./dist/lib/adapters/netlify.js",
       "require": "./dist/lib/adapters/netlify.cjs"
     },
     "./adapters/bun": {
-      "types": "./dist/lib/adapters/bun.d.ts",
+      "types": {
+        "import": "./dist/lib/adapters/bun.d.ts",
+        "require": "./dist/lib/adapters/bun.d.cts"
+      },
       "import": "./dist/lib/adapters/bun.js",
       "require": "./dist/lib/adapters/bun.cjs"
     },
     "./adapters/node": {
-      "types": "./dist/lib/adapters/node.d.ts",
+      "types": {
+        "import": "./dist/lib/adapters/node.d.ts",
+        "require": "./dist/lib/adapters/node.d.cts"
+      },
       "import": "./dist/lib/adapters/node.js",
       "require": "./dist/lib/adapters/node.cjs"
     },
     "./action": {
-      "types": "./dist/lib/action/index.d.ts",
+      "types": {
+        "import": "./dist/lib/action/index.d.ts",
+        "require": "./dist/lib/action/index.d.cts"
+      },
       "import": "./dist/lib/action/index.js",
       "require": "./dist/lib/action/index.cjs"
     },
     "./router": {
-      "types": "./dist/lib/router/client.d.ts",
+      "types": {
+        "import": "./dist/lib/router/client.d.ts",
+        "require": "./dist/lib/router/client.d.cts"
+      },
       "import": "./dist/lib/router/client.js",
       "require": "./dist/lib/router/client.cjs"
     },
     "./content": {
-      "types": "./dist/lib/content/index.d.ts",
+      "types": {
+        "import": "./dist/lib/content/index.d.ts",
+        "require": "./dist/lib/content/index.d.cts"
+      },
       "import": "./dist/lib/content/index.js",
       "require": "./dist/lib/content/index.cjs"
     },
     "./image": {
-      "types": "./dist/lib/image/index.d.ts",
+      "types": {
+        "import": "./dist/lib/image/index.d.ts",
+        "require": "./dist/lib/image/index.d.cts"
+      },
       "import": "./dist/lib/image/index.js",
       "require": "./dist/lib/image/index.cjs"
     },
     "./seo": {
-      "types": "./dist/lib/seo/index.d.ts",
+      "types": {
+        "import": "./dist/lib/seo/index.d.ts",
+        "require": "./dist/lib/seo/index.d.cts"
+      },
       "import": "./dist/lib/seo/index.js",
       "require": "./dist/lib/seo/index.cjs"
+    },
+    "./config": {
+      "types": {
+        "import": "./dist/lib/config/index.d.ts",
+        "require": "./dist/lib/config/index.d.cts"
+      },
+      "import": "./dist/lib/config/index.js",
+      "require": "./dist/lib/config/index.cjs"
+    },
+    "./manifest": {
+      "types": {
+        "import": "./dist/lib/manifest/index.d.ts",
+        "require": "./dist/lib/manifest/index.d.cts"
+      },
+      "import": "./dist/lib/manifest/index.js",
+      "require": "./dist/lib/manifest/index.cjs"
+    },
+    "./integrations": {
+      "types": {
+        "import": "./dist/lib/integrations/index.d.ts",
+        "require": "./dist/lib/integrations/index.d.cts"
+      },
+      "import": "./dist/lib/integrations/index.js",
+      "require": "./dist/lib/integrations/index.cjs"
+    },
+    "./runtime": {
+      "types": {
+        "import": "./dist/lib/runtime/index.d.ts",
+        "require": "./dist/lib/runtime/index.d.cts"
+      },
+      "import": "./dist/lib/runtime/index.js",
+      "require": "./dist/lib/runtime/index.cjs"
     }
   },
   "files": [
@@ -106,7 +180,7 @@
   },
   "sideEffects": false,
   "engines": {
-    "node": ">=18.0.0"
+    "node": ">=20.19.0"
   },
   "scripts": {
     "poc": "bun run example/build.ts",
@@ -117,16 +191,16 @@
     "test": "node --import tsx --test test/**/*.test.ts",
     "test:watch": "node --import tsx --test --watch test/**/*.test.ts",
     "build": "npm run build:lib",
-    "build:lib": "vite build --config vite.lib.config.ts && vite build --config vite.cli.config.ts && tsc --project tsconfig.lib.json && terser dist/lib/index.js -c -m -o dist/lib/index.js && terser dist/lib/index.cjs -c -m -o dist/lib/index.cjs && terser dist/lib/island/index.js -c -m -o dist/lib/island/index.js && terser dist/lib/island/index.cjs -c -m -o dist/lib/island/index.cjs",
+    "build:lib": "vite build --config vite.lib.config.ts && vite build --config vite.cli.config.ts && tsc --project tsconfig.lib.json && node scripts/copy-dcts.mjs && terser dist/lib/index.js -c -m -o dist/lib/index.js && terser dist/lib/index.cjs -c -m -o dist/lib/index.cjs && terser dist/lib/island/index.js -c -m -o dist/lib/island/index.js && terser dist/lib/island/index.cjs -c -m -o dist/lib/island/index.cjs",
     "prepack": "npm run build:lib"
   },
   "dependencies": {
-    "happy-dom": "^20.8.3",
-    "tsx": "^4.22.5"
+    "happy-dom": "^20.11.2",
+    "tsx": "^4.23.12"
   },
   "peerDependencies": {
-    "@deijose/nix-js": "2.6.0",
-    "vite": "^5.0.0 || ^6.0.0 || ^7.0.0 || ^8.0.0"
+    "@deijose/nix-js": "^3.0.0",
+    "vite": "^7.0.0 || ^8.0.0"
   },
   "peerDependenciesMeta": {
     "marked": {
@@ -140,10 +214,10 @@
     }
   },
   "devDependencies": {
-    "@deijose/nix-js": "2.6.0",
-    "@types/node": "^22.10.0",
-    "terser": "^5.46.0",
+    "@deijose/nix-js": "../nix-js-microframework",
+    "@types/node": "^22.20.1",
+    "terser": "^5.50.0",
     "typescript": "^7.0.2",
-    "vite": "^8.0.0"
+    "vite": "^8.2.1"
   }
 }

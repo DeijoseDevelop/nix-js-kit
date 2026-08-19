@@ -44,7 +44,7 @@ describe("image()", () => {
     assert.ok(!html.includes('loading="lazy"'));
   });
 
-  it("emits srcset with multiple widths", async () => {
+  it("does not emit unresolved responsive variant URLs", async () => {
     const html = await renderToHtml(image({
       src: "/images/hero.jpg",
       alt: "Hero",
@@ -52,10 +52,9 @@ describe("image()", () => {
       height: 600,
       widths: [400, 800, 1200],
     }));
-    assert.ok(html.includes('srcset="'));
-    assert.ok(html.includes("/images/hero-400w.jpg 400w"));
-    assert.ok(html.includes("/images/hero-800w.jpg 800w"));
-    assert.ok(html.includes("/images/hero-1200w.jpg 1200w"));
+    assert.ok(!html.includes('srcset="'));
+    assert.ok(!html.includes("/images/hero-400w.jpg"));
+    assert.ok(html.includes('src="/images/hero.jpg"'));
   });
 
   it("emits sizes attribute when provided", async () => {

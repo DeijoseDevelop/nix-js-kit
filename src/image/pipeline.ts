@@ -24,8 +24,13 @@ async function loadSharp(): Promise<any | null> {
   try {
     // @ts-ignore — `sharp` is an optional peer dependency.
     const mod = await import("sharp");
-    sharpLoader = async () => mod;
-    return mod;
+    const sharp = mod.default;
+    if (typeof sharp !== "function") {
+      sharpLoader = null;
+      return null;
+    }
+    sharpLoader = async () => sharp;
+    return sharp;
   } catch {
     sharpLoader = null;
     return null;

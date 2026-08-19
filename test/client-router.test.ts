@@ -9,7 +9,7 @@ describe("client router: prefetch cache", () => {
   let window: Window;
   let originalFetch: typeof fetch;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     window = new Window({ url: "http://localhost/" });
     const g = globalThis as Record<string, unknown>;
     g.document = window.document;
@@ -31,7 +31,12 @@ describe("client router: prefetch cache", () => {
       disconnect() { }
     };
     g.matchMedia = () => ({ matches: false }) as any;
+    g.AbortController = window.AbortController;
     originalFetch = globalThis.fetch;
+
+    // Reset router internal state for test isolation.
+    const { __resetRouterState } = await import("../src/router/client.ts");
+    __resetRouterState();
   });
 
   afterEach(() => {
@@ -48,6 +53,7 @@ describe("client router: prefetch cache", () => {
     delete g.IntersectionObserver;
     delete g.MutationObserver;
     delete g.matchMedia;
+    delete g.AbortController;
     globalThis.fetch = originalFetch;
     window.happyDOM.close();
   });
@@ -128,7 +134,11 @@ describe("client router: prefetch cache", () => {
     window.document.body.innerHTML = '<div id="app"><p>original</p></div>';
 
     let fetchCount = 0;
-    globalThis.fetch = (async () => {
+    globalThis.fetch = (async (input: any, init?: any) => {
+      // Ignore probe requests (they use X-Nix-Probe header).
+      if (init?.headers?.["X-Nix-Probe"]) {
+        return { ok: true, json: async () => ({ body: "" }) } as Response;
+      }
       fetchCount++;
       return {
         ok: true,
@@ -165,6 +175,6 @@ describe("client router: prefetch cache", () => {
 
     // The cookie should have been set (to clear it).
     // In happy-dom, document.cookie is writable.
-    assert.ok(window.document.cookie.includes("__nix_js_action_error") || true);
+    assert.ok(!window.document.cookie.includes("__nix_js_action_error"));
   });
 });
