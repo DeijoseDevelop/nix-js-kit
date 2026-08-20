@@ -1,5 +1,5 @@
 import type { ActionRequest } from "./index.js";
-import { isActionFailure, isRedirectResponse } from "../errors.js";
+import { isActionFailure, isRedirectResponse, publicErrorResponse } from "../errors.js";
 import { verifyOrigin, originForbidden, type OriginCheckOptions } from "./origin.js";
 import {
   encodeActionErrorCookie,
@@ -312,10 +312,7 @@ export async function handleActionRequest(
     });
   } catch (err) {
     console.error("[nix-js-kit] Action error:", err);
-    return new Response(String(err), {
-      status: 500,
-      headers: { "Content-Type": "text/plain; charset=utf-8" },
-    });
+    return publicErrorResponse(err, { includeDetail: false });
   }
 }
 

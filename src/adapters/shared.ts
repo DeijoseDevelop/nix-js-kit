@@ -292,7 +292,7 @@ export default async function handler(request: Request): Promise<Response> {
     if (errorResult) {
       return new Response(errorResult.html, { status: errorResult.status, headers: { "Content-Type": "text/html; charset=utf-8" } });
     }
-    return new Response(String(err), { status: 500, headers: { "Content-Type": "text/plain; charset=utf-8" } });
+    return new Response("Internal Server Error", { status: 500, headers: { "Content-Type": "text/plain; charset=utf-8" } });
   }
 }
 `;

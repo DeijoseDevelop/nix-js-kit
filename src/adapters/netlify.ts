@@ -4,6 +4,7 @@ import { build } from "vite";
 import { scanRoutes } from "../router/route-scanner.js";
 import type { Adapter } from "./index.js";
 import { writeSsrEntry } from "./shared.js";
+import { SERVERLESS_CAPABILITIES } from "../runtime/capabilities.js";
 
 /**
  * Netlify adapter for nix-js-kit.
@@ -18,6 +19,7 @@ import { writeSsrEntry } from "./shared.js";
  */
 export const netlifyAdapter: Adapter = {
   name: "netlify",
+  capabilities: SERVERLESS_CAPABILITIES,
 
   async build(options) {
     const root = resolve(options.root);

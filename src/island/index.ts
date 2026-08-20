@@ -9,5 +9,5 @@
 // Server-side pages should import `island()` from the main package instead.
 // =============================================================================
 
-export { hydrateIslands, cleanupHydratedIslands, type IslandRegistry } from "./hydrate.js";
+export { hydrateIslands, cleanupHydratedIslands, lazyIsland, type IslandRegistry, type IslandLoader, type IslandRegistryEntry } from "./hydrate.js";
 export type { IslandComponent, IslandDirective } from "./island.js";

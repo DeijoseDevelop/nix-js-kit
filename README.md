@@ -21,7 +21,7 @@ Nix.js Kit is a meta-framework built on top of [Nix.js](https://nix-js.dev/). It
 ### Key features
 
 - **Routing**: file-based with dynamic segments, optional catch-all `[[...slug]]`, route conflict detection, safe URL decoding, redirects/rewrites/route headers
-- **Rendering**: SSG, SSR, ISR with explicit cache policy (public/private/dynamic), real streaming with `ReadableStream`
+- **Rendering**: SSG, SSR, ISR with explicit cache policy (public/private/dynamic), streaming with `ReadableStream` (**experimental** — fallback buffered por adapter; ver nota de streaming)
 - **Actions**: typed `defineAction()` with input validation, AbortSignal, idempotency, concurrency modes (latest/queue/parallel)
 - **Cache**: `CacheAdapter` with filesystem storage, SHA-256 keys, atomic writes, single-flight, stale-while-revalidate, tag-based invalidation
 - **Security**: HMAC-signed action error cookies, body limits, CSRF verification, default security headers (CSP, HSTS, X-Frame-Options, etc.), conditional static serving (ETag/Last-Modified)
@@ -142,13 +142,14 @@ Options:
 
 - **File-based routing** — `src/app/page.ts` maps to URLs with dynamic segments (`[slug]`), catch-all (`[...slug]`), optional catch-all (`[[...slug]]`), route groups `(group)`, and route conflict detection.
 - **SSG, SSR, ISR** — static generation, on-demand SSR, and incremental static regeneration with explicit cache policy (`public`/`private`/`dynamic`), SHA-256 cache keys, atomic writes, single-flight, and tag-based invalidation.
-- **Real streaming** — `ReadableStream`-based streaming with `loading.ts` boundaries, `createStreamingResponse()`, and `createBufferedResponse()` fallback for adapters without streaming.
+- **Streaming (experimental)** — `ReadableStream`-based streaming with `loading.ts` boundaries, `createStreamingResponse()`, and `createBufferedResponse()` fallback for adapters without streaming. **Etiquetado como experimental** hasta completar la matriz de paridad streaming/buffered cross-host y la implementación de `renderToChunks()` en el core.
 - **Server actions** — typed `defineAction()` with input validation (`.parse()`), AbortSignal propagation, idempotency metadata, concurrency modes (`latest`/`queue`/`parallel`), and progressive enhancement (plain HTML forms).
 - **RequestContext** — per-request context with `params`, `locals`, `cookies` (CookieJar), `signal` (AbortSignal), `requestId`, `platform`, `route`, and mutable `response` state (headers, Set-Cookie, status). Aligned with runtime-security §4.
-- **Unified Web handler** — `createWebHandler()` is the single entry point for all runtimes (Node, Bun, Vercel, Netlify, Vite dev). Every runtime is a thin wrapper.
+- **Unified Web handler** — `createWebHandler()` is the single entry point for all runtimes (Node, Bun, Vercel, Netlify, Vite dev **y el CLI `dev`/`preview`**). Every runtime is a thin wrapper; no duplicated routing/actions/static pipelines.
 - **Cache security** — `shouldCachePublic()` rejects requests with cookies/Authorization. `isResultCacheable()` rejects HTML with action error markers. No personalized ISR cache leakage.
+- **Public error sanitization** — production 500s use `toPublicErrorInfo()`/`publicErrorResponse()` (JSON, `no-store`), never exposing stacks, paths or secrets; request id is kept in internal logs.
 - **CSRF protection** — `verifyOrigin()` checks `Origin`, `Referer`, `Host`, and `Sec-Fetch-Site` with allow-list and `strictOrigin` mode.
-- **Static serving** — containment-enforced path resolution (rejects traversal, NUL, backslashes, symlinks), ETag/Last-Modified conditional requests, immutable caching for hashed assets.
+- **Static serving** — containment-enforced path resolution (rejects traversal, NUL, backslashes, symlinks), ETag/Last-Modified conditional requests, Range/If-Range with 206/416, HEAD sin body, immutable caching for hashed assets.
 - **Security headers** — CSP with nonce support, HSTS (HTTPS only), X-Content-Type-Options, Referrer-Policy, X-Frame-Options, Permissions-Policy.
 - **Content layer** — per-request scope via `AsyncLocalStorage`, collection name containment (no path traversal), frontmatter parser, Markdown rendering.
 - **SEO** — sitemap generation from route manifest, sitemap index for >50,000 URLs, robots.txt, JSON-LD with safe escaping (`<`, `>`, `&`, U+2028, U+2029).
@@ -177,10 +178,15 @@ Options:
 - **Security: Cache isolation** — no public caching of personalized responses. HMAC-signed action errors.
 - **Security: JSON-LD** — escapes `<`, `>`, `&`, U+2028, U+2029.
 - **Security: Body limits** — 413 responses for oversized JSON/form bodies.
+- **Security: Public errors (v2.0.2)** — production 500s no longer leak `String(err)`; sanitized JSON via `toPublicErrorInfo()`/`publicErrorResponse()`.
+- **Security: Static ranges (v2.0.2)** — `Range`/`If-Range` with 206/416 and uniform HEAD responses.
 - **DX: CLI** — `check`, `routes`, `doctor` commands with reliable exit codes.
 - **DX: Logger** — structured logger with request ID, Server-Timing, redaction.
 - **DX: Scaffold** — `create-nix-app` with `template-kit` option.
-- **Tests: 398 tests** — unit, integration, security fuzz, cache concurrency, CSRF matrix, package smoke, SSR benchmark.
+- **Images (v2.0.2)** — SHA-256 transform keys, path containment, atomic writes, single-flight, `images.strict`, `getImage()` and `ImageService`.
+- **Capabilities (v2.0.2)** — `AdapterCapabilities` per host with build-time `validateCapabilities()`.
+- **Islands (v2.0.2)** — discriminated `{ load }` lazy loaders + `lazyIsland()`; loader detection never probes the component.
+- **Tests: 442 tests** — unit, integration, security fuzz, cache concurrency, CSRF matrix, package smoke, SSR benchmark, static range, error sanitization, image hardening, capabilities, cross-runtime parity.
 - **Audit: 0 vulnerabilities** — `bun audit` clean. `publint` All good.
 
 ## What's new in v1.3
@@ -218,7 +224,8 @@ Options:
 | v1.1 | Streaming boundaries + ISR ✅ |
 | v1.2 | Interpolation plugin, SPA router, preview SSR fallback ✅ |
 | v1.3 | Security, metadata API, content layer, image optimization, prefetch, View Transitions, middleware ✅ |
-| v2.0 | Core v3 (SSR without Happy DOM, real hydration), atomic build, manifest-driven images, unified Web handler, RequestContext (§4), CSRF/static/cache hardening, CLI commands, structured logger, scaffold, 398 tests, 0 vulnerabilities ✅ |
+| v2.0 | Core v3 (SSR without Happy DOM, real hydration), atomic build, manifest-driven images, unified Web handler, RequestContext (§4), CSRF/static/cache hardening, CLI commands, structured logger, scaffold, 442 tests, 0 vulnerabilities ✅ |
+| v2.0.2 | Cumplimiento: keyed hydration, streaming chunks/protocols (core), static Range/HEAD, errores sanitizados, imágenes hardening + `getImage`/`ImageService`, capabilities, islands `lazyIsland`, E2E Playwright (16 tests) ⏳ unreleased |
 
 ## API
 
@@ -291,6 +298,19 @@ import { hydrateIslands } from "@deijose/nix-js-kit/island";
 import LikeButton from "./islands/LikeButton";
 
 hydrateIslands({ LikeButton });
+```
+
+Lazy (code-split) islands use a discriminated `{ load }` loader so the hydrator
+can tell eager components from lazy loaders **without invoking them** (no probe
+side effects):
+
+```ts
+import { lazyIsland, hydrateIslands } from "@deijose/nix-js-kit/island";
+
+const registry = {
+  LikeButton: lazyIsland(() => import("./islands/LikeButton").then((m) => m.default)),
+};
+hydrateIslands(registry);
 ```
 
 …or let `build()` generate it for you by scanning `src/islands/` (see
@@ -845,6 +865,54 @@ export default function HeroPage() {
 When `sharp` is installed (optional peer dep), `build()` automatically
 generates WebP and AVIF variants at the requested widths with content-based
 hashing for indefinite caching.
+
+The image pipeline (v2.0.2) is hardened:
+
+- **SHA-256 transform keys** — a variant's hash incorporates the source content
+  digest + normalized transform options + encoder/naming versions, so changing
+  quality or encoder invalidates the URL as required.
+- **Path containment** — sources and outputs are validated against traversal,
+  NUL, separators and symlink escape; no reads/writes outside allowed roots.
+- **Atomic writes + single-flight** — variants are written via temp+rename with
+  a bounded concurrency pool and one in-flight transform per key.
+- **`images.strict`** — fails the build on a missing source or failed transform
+  instead of emitting a partially-written variant.
+
+Programmatic API:
+
+```ts
+import { getImage, createImageService } from "@deijose/nix-js-kit/image";
+
+const meta = await getImage(
+  { src: "/images/hero.jpg", alt: "Hero", widths: [640, 1280], formats: ["avif", "webp"] },
+  { publicDir: "public", outDir: "dist" },
+);
+// meta.sources, meta.generated, meta.attributes ...
+
+const service = createImageService({ publicDir: "public", outDir: "dist" });
+// service.resolve(request, ctx); service.capabilities ...
+```
+
+### Adapter capabilities
+
+Each adapter declares an explicit capability contract used for build-time
+diagnostics (runtime-security §8.5):
+
+```ts
+interface AdapterCapabilities {
+  streaming: boolean;
+  filesystem: "none" | "readonly" | "persistent" | "ephemeral";
+  imageRuntime: boolean;
+  backgroundWork: boolean;
+  maxBodySize?: number;
+}
+```
+
+- `DEFAULT_CAPABILITIES` (Node/Bun), `SERVERLESS_CAPABILITIES` (Vercel/Netlify),
+  `EDGE_CAPABILITIES` and `createCapabilities()` are exported from
+  `@deijose/nix-js-kit/runtime`.
+- `validateCapabilities(caps, { isr, images, streaming })` is checked by the
+  CLI `adapter` command so incompatible host+feature combinations fail at build.
 
 ### Middleware
 

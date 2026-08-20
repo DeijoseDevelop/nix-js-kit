@@ -4,6 +4,7 @@ import { build } from "vite";
 import { scanRoutes } from "../router/route-scanner.js";
 import type { Adapter } from "./index.js";
 import { copyStatic, writeSsrEntry } from "./shared.js";
+import { SERVERLESS_CAPABILITIES } from "../runtime/capabilities.js";
 
 /**
  * Vercel adapter for nix-js-kit.
@@ -14,6 +15,7 @@ import { copyStatic, writeSsrEntry } from "./shared.js";
  */
 export const vercelAdapter: Adapter = {
   name: "vercel",
+  capabilities: SERVERLESS_CAPABILITIES,
 
   async build(options) {
     const root = resolve(options.root);

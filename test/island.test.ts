@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { Window } from "happy-dom";
 import { html } from "@deijose/nix-js";
-import { cleanupHydratedIslands, hydrateIslands, type IslandRegistry } from "../src/island/hydrate.ts";
+import { cleanupHydratedIslands, hydrateIslands, lazyIsland, type IslandRegistry } from "../src/island/hydrate.ts";
 import { island, type IslandComponent } from "../src/island/island.ts";
 import { renderToString } from "../src/render/render-to-string.ts";
 
@@ -133,9 +133,58 @@ describe("island hydration", () => {
   });
 });
 
+describe("island lazy loader detection (§10.3)", () => {
+  it("resolves a discriminated { load } loader without invoking the component", async () => {
+    document.body.innerHTML = '<div data-nix-js-island="Lazy" data-props="{}"></div>';
+    let componentCalls = 0;
+    const component: IslandComponent = () => {
+      componentCalls++;
+      return textTemplate("lazy-hydrated");
+    };
+    let loadCalls = 0;
+    const registry = {
+      Lazy: lazyIsland(() => {
+        loadCalls++;
+        return Promise.resolve(component);
+      }),
+    } as unknown as IslandRegistry;
+
+    hydrateIslands(registry);
+    assert.equal(loadCalls, 1, "loader should be called exactly once");
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    assert.equal(document.querySelector('[data-nix-js-island="Lazy"]')?.textContent, "lazy-hydrated");
+    assert.equal(componentCalls, 1, "component called once with real props, no probe call");
+  });
+
+  it("detects a legacy async loader without executing it as a probe", async () => {
+    document.body.innerHTML = '<div data-nix-js-island="Legacy" data-props="{}"></div>';
+    let calls = 0;
+    const registry = {
+      Legacy: (async () => {
+        calls++;
+        return () => textTemplate("legacy");
+      }) as unknown,
+    } as unknown as IslandRegistry;
+
+    hydrateIslands(registry);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    assert.equal(calls, 1, "async loader executed once (not probed then called)");
+    assert.equal(document.querySelector('[data-nix-js-island="Legacy"]')?.textContent, "legacy");
+  });
+
+  it("generates discriminated lazy loaders in the client entry", async () => {
+    const { buildEntrySource } = await import("../src/island/generate-entry.ts");
+    const source = buildEntrySource(
+      [{ name: "Counter", filePath: "/project/src/islands/Counter.ts" }],
+      "/project/.nix-js/entry-client.ts",
+    );
+    assert.ok(source.includes("{ load: () => import("), "should emit discriminated { load } loader");
+  });
+});
+
 describe("island entry generator: lazy imports", () => {
-  it("generates dynamic import() calls for code-splitting", () => {
-    const { buildEntrySource } = require("../src/island/generate-entry.ts");
+  it("generates dynamic import() calls for code-splitting", async () => {
+    const { buildEntrySource } = await import("../src/island/generate-entry.ts");
     const source = buildEntrySource(
       [
         { name: "Counter", filePath: "/project/src/islands/Counter.ts" },
@@ -152,8 +201,8 @@ describe("island entry generator: lazy imports", () => {
     assert.ok(source.includes("hydrateIslands(registry)"), "should call hydrateIslands");
   });
 
-  it("generates empty entry when no islands exist", () => {
-    const { buildEntrySource } = require("../src/island/generate-entry.ts");
+  it("generates empty entry when no islands exist", async () => {
+    const { buildEntrySource } = await import("../src/island/generate-entry.ts");
     const source = buildEntrySource([], "/project/.nix-js/entry-client.ts");
     assert.ok(!source.includes("hydrateIslands(registry)"), "should not hydrate when no islands");
     assert.ok(source.includes("startClientRouter()"), "should still start the router");

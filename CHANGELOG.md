@@ -5,6 +5,68 @@ All notable changes to Nix.js Kit are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.2]
+
+### Fixed — compliance and correctness (audit §8–§10)
+
+- **Unified CLI request pipeline** — `handleRequest` (dev/preview) now delegates
+  to `createWebHandler`, the same code used by the Node/Bun/Vercel/Netlify
+  adapters. The duplicated actions/render-endpoint/API/static/SSR/404/500
+  pipeline in `src/cli.ts` was removed (audit §8.1, Risk 1).
+- **`start` with missing middleware (Bun)** — `loadMiddleware` matched
+  "module not found" via `err instanceof Error`, but Bun's `ResolveMessage` is
+  not an `Error` instance, so projects without `src/middleware.ts` failed to
+  start. Detection now uses the message property directly.
+- **Stale content after server actions under SSR** — the `start` server and the
+  unified handler rewrite the baked `nix-js:render-endpoint content="off"` meta
+  to `"on"` when serving static HTML, so SPA navigations after a mutating
+  action fetch live server-rendered content instead of the stale static file
+  (fixes e.g. "review published without reload").
+- **Stale core bundled in the CLI** — `vite.cli.config.ts` externalizes
+  `@deijose/nix-js/*` (including subpaths) so the CLI never bundles an
+  outdated copy of the core server renderer.
+- **Island loader detection without probing** — the registry now uses a
+  discriminated `{ load }` lazy form plus `AsyncFunction` detection (never
+  invoking the component as a probe, avoiding side effects / duplicate signal
+  creation). New `lazyIsland()` helper (audit §10.3).
+- **Production error sanitization** — new `toPublicErrorInfo()` /
+  `publicErrorResponse()` in `src/errors.ts`; the unified handler, action
+  server and adapters no longer expose `String(err)` (paths/stacks/secrets) in
+  responses (audit §8.4, Risk 5).
+
+### Added — static serving, images and capabilities
+
+- **Static serving Range/If-Range/HEAD** — `serveStaticFile` now supports
+  `Accept-Ranges`, single `Range` with `If-Range` (ETag or date), `206` with
+  `Content-Range`, `416` for unsatisfiable ranges, and uniform HEAD responses
+  (audit §8.3).
+- **Image pipeline hardening** — SHA-256 transform keys (content + normalized
+  options + encoder/naming versions), path containment for sources and outputs
+  (no traversal/NUL/symlink escape), atomic temp+rename writes, single-flight
+  per transform key, bounded concurrency pool, and `images.strict` build mode
+  (audit §9.4–§9.7).
+- **`getImage()` and `ImageService`** — programmatic async image API and the
+  `ImageService`/`createImageService` contract with declared capabilities
+  (audit §9.2–§9.3).
+- **Adapter capability contract** — `AdapterCapabilities` (streaming,
+  filesystem none/readonly/persistent/ephemeral, imageRuntime, backgroundWork,
+  maxBodySize), defaults for full/serverless/edge hosts, and build-time
+  `validateCapabilities()` diagnostics in the CLI `adapter` command
+  (audit §8.5).
+
+### Test
+
+- New suites: static range/HEAD (10), error sanitization (6), image hardening
+  (12), capabilities (10), cross-runtime parity (3), island lazy-loader
+  detection (3). Full suite at 442 tests (was 398). Fixed pre-existing failing
+  tests: island entry generator (`require` in ESM), benchmark variance
+  threshold, and the router clear-cookie test (happy-dom does not honor
+  `Max-Age=0` removal).
+
+### Docs
+
+- README: streaming labelled experimental; static serving now documents
+  Range/HEAD. See `docs/nix-js-kit/` for the full remediation record.
 
 ## [Unreleased] — v2 development
 

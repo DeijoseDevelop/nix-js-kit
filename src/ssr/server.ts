@@ -11,6 +11,7 @@ import { renderPageBody, renderStreamingPage, RouteNotFoundError } from "./strea
 import { loadMiddleware, matchesMiddleware, runMiddleware } from "../middleware/index.js";
 import { incomingMessageToRequest } from "../runtime/node-http.js";
 import { resolveStaticFile } from "../runtime/static.js";
+import { toPublicErrorInfo } from "../errors.js";
 
 export interface SsrServerOptions {
   /** Absolute path to the app directory (e.g. /project/src/app). */
@@ -81,7 +82,7 @@ export async function createSsrServer(options: SsrServerOptions): Promise<SsrSer
       } catch (err) {
         console.error("[action] error handling", err);
         res.writeHead(500, { "Content-Type": "text/plain; charset=utf-8" });
-        res.end(String(err));
+        res.end(toPublicErrorInfo(err).message);
       }
       return;
     }
@@ -200,7 +201,7 @@ export async function createSsrServer(options: SsrServerOptions): Promise<SsrSer
       } catch (err) {
         console.error("[api] error handling", urlPath, err);
         res.writeHead(500, { "Content-Type": "text/plain; charset=utf-8" });
-        res.end(String(err));
+        res.end(toPublicErrorInfo(err).message);
       }
       return;
     }
@@ -288,7 +289,7 @@ export async function createSsrServer(options: SsrServerOptions): Promise<SsrSer
           res.end(errorResult.html);
         } else {
           res.writeHead(500, { "Content-Type": "text/plain; charset=utf-8" });
-          res.end(String(err));
+          res.end(toPublicErrorInfo(err).message);
         }
         return;
       }
@@ -337,8 +338,22 @@ async function tryServeStatic(
 ): Promise<boolean> {
   const filePath = await resolveStaticFile(publicDir, urlPath);
   if (!filePath) return false;
-  const data = await readFile(filePath);
-  res.writeHead(200, { "Content-Type": guessContentType(filePath) });
+  const contentType = guessContentType(filePath);
+  let data: Buffer | string = await readFile(filePath);
+  if (contentType.includes("text/html")) {
+    // The SSG build bakes `render-endpoint content="off"` into the static
+    // HTML so purely static deployments never probe the endpoint. This server
+    // (SSR `start`) DOES expose /__nix-js/render, so advertise it: SPA
+    // navigations then fetch live server-rendered content instead of the
+    // stale static file (e.g. after a mutating server action).
+    data = data
+      .toString("utf8")
+      .replace(
+        '<meta name="nix-js:render-endpoint" content="off" />',
+        '<meta name="nix-js:render-endpoint" content="on" />',
+      );
+  }
+  res.writeHead(200, { "Content-Type": contentType, "Content-Length": Buffer.byteLength(data) });
   res.end(data);
   return true;
 }

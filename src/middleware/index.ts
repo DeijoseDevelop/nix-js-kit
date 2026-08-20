@@ -87,20 +87,23 @@ export async function loadMiddleware(root: string): Promise<LoadedMiddleware | n
       // If the error is a module resolution error for this specific file,
       // it means the file doesn't exist — try the next candidate.
       // If it's a syntax/runtime error, rethrow so the user sees it.
-      if (err instanceof Error) {
-        const msg = err.message;
-        if (
-          msg.includes("Cannot find module") ||
-          msg.includes("Cannot find package") ||
-          msg.includes("ENOENT") ||
-          msg.includes("Module not found")
-        ) {
-          // File doesn't exist — try next candidate.
-          continue;
-        }
+      // Note: Bun's ResolveMessage is not `instanceof Error`, so match on the
+      // message property instead of relying on the class hierarchy.
+      const msg =
+        typeof err === "object" && err !== null && "message" in err
+          ? String((err as { message: unknown }).message)
+          : String(err);
+      if (
+        msg.includes("Cannot find module") ||
+        msg.includes("Cannot find package") ||
+        msg.includes("ENOENT") ||
+        msg.includes("Module not found")
+      ) {
+        // File doesn't exist — try next candidate.
+        continue;
       }
       // Actual error in the middleware file — rethrow (§6).
-      throw new Error(`[nix-js-kit] Error loading middleware: ${err instanceof Error ? err.message : String(err)}`, { cause: err });
+      throw new Error(`[nix-js-kit] Error loading middleware: ${msg}`, { cause: err });
     }
   }
 

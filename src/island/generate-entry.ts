@@ -56,11 +56,13 @@ export function buildEntrySource(
   // This enables code-splitting — islands not on the current page (or not yet
   // triggered by their directive) stay out of the initial bundle.
   //
-  // The registry maps island name → async loader function. hydrateIslands()
-  // awaits the loader before hydrating, so the first paint only needs the
-  // small entry chunk + the islands actually present on the page.
+  // The registry maps island name → discriminated lazy loader `{ load }`.
+  // hydrateIslands() awaits `entry.load()` before hydrating, so the first
+  // paint only needs the small entry chunk + the islands on the page. The
+  // discriminated form lets the hydrator tell eager components from lazy
+  // loaders without executing a probe.
   const registryLines = bindings
-    .map((b) => `  ${JSON.stringify(b.name)}: () => import(${JSON.stringify(b.spec)}).then(m => m.default),`)
+    .map((b) => `  ${JSON.stringify(b.name)}: { load: () => import(${JSON.stringify(b.spec)}).then(m => m.default) },`)
     .join("\n");
 
   const islandHydration = registryLines

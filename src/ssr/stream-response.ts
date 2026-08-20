@@ -211,8 +211,4 @@ const defaultImport = (path: string) => import(path);
  * Checks if the host runtime supports streaming responses.
  * Node, Bun, and modern edge runtimes do. Some serverless platforms may not.
  */
-export function supportsStreaming(
-  capabilities: { streaming?: boolean } = {},
-): boolean {
-  return capabilities.streaming !== false;
-}
+export { supportsStreaming } from "../runtime/capabilities.js";

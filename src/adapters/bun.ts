@@ -3,6 +3,7 @@ import { relative, resolve } from "node:path";
 import { scanRoutes } from "../router/route-scanner.js";
 import type { Adapter } from "./index.js";
 import { writeSsrEntry } from "./shared.js";
+import { DEFAULT_CAPABILITIES } from "../runtime/capabilities.js";
 
 /**
  * Bun adapter for nix-js-kit.
@@ -17,6 +18,7 @@ import { writeSsrEntry } from "./shared.js";
  */
 export const bunAdapter: Adapter = {
   name: "bun",
+  capabilities: DEFAULT_CAPABILITIES,
 
   async build(options) {
     const root = resolve(options.root);

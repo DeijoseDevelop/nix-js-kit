@@ -15,18 +15,51 @@ const _islandSchedules = new Set<() => void>();
 
 export type IslandComponent<TProps = unknown> = (props: TProps) => NixTemplate | null | false | undefined;
 
+/** Lazy island loader in a discriminated form (no probe required to detect). */
+export interface IslandLoader<TProps = unknown> {
+  load: () => Promise<IslandComponent<TProps>>;
+}
+
 /**
- * Island registry entry. Can be either:
- *   - A direct component function (eager loading, legacy).
- *   - An async loader function that returns the component (lazy loading).
+ * Island registry entry. Two unambiguous shapes:
+ *   - `IslandComponent` (eager component function).
+ *   - `IslandLoader` `{ load }` (lazy, code-split loader).
+ *
+ * Legacy async loader functions are also accepted for backwards compatibility
+ * and detected *without invoking them* (via the `AsyncFunction` tag), so no
+ * side effects or duplicate signal creation happen during detection.
  */
 export type IslandRegistryEntry<TProps = unknown> =
   | IslandComponent<TProps>
+  | IslandLoader<TProps>
   | (() => Promise<IslandComponent<TProps>>);
 
 export type IslandRegistry = Record<string, IslandRegistryEntry<any>>;
 
 export type IslandDirective = "load" | "idle" | "visible";
+
+/**
+ * Wraps a lazy island loader in the discriminated `{ load }` form.
+ */
+export function lazyIsland<TProps = unknown>(
+  loader: () => Promise<IslandComponent<TProps>>,
+): IslandLoader<TProps> {
+  return { load: loader };
+}
+
+function isIslandLoader(value: unknown): value is IslandLoader {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    typeof (value as { load?: unknown }).load === "function"
+  );
+}
+
+function isAsyncFunction(value: unknown): boolean {
+  if (typeof value !== "function") return false;
+  const ctor = (value as { constructor?: { name?: string } }).constructor;
+  return ctor?.name === "AsyncFunction" || (value as { [Symbol.toStringTag]?: string })[Symbol.toStringTag] === "AsyncFunction";
+}
 
 interface IslandMarker {
   el: HTMLElement;
@@ -71,32 +104,24 @@ async function hydrate(marker: IslandMarker, registry: IslandRegistry): Promise<
       return;
     }
 
-    // Resolve the component: either a direct component function (eager) or an
-    // async loader (lazy/code-split). This enables per-island dynamic imports
-    // so islands not on the current page stay out of the initial bundle.
-    //
-    // Detection: call the entry. If it returns a Promise, it's a lazy loader
-    // and we await it to get the module/component. If it returns a NixTemplate
-    // (or null/false/undefined), it was a direct component called without
-    // props — but that's wrong, we need to call it WITH props. So we detect
-    // "is this a loader?" by checking if the return is a Promise.
-    let resolved: unknown;
-    if (typeof entry === "function") {
-      const result = (entry as () => unknown)();
-      if (result instanceof Promise) {
-        // Lazy loader: await to get the module (or component).
-        const mod = await result;
-        resolved = typeof mod === "function" ? mod : (mod as { default?: unknown })?.default;
+    // Resolve the component without probing: a `{ load }` loader or an async
+    // function is lazy (awaited for the module/component); anything else is an
+    // eager component called directly with the island props. Detection never
+    // invokes the component with undefined props, so no side effects or
+    // duplicate signal creation occur during resolution. Eager components
+    // hydrate synchronously; lazy loaders hydrate once the module resolves.
+    let Component: IslandComponent | undefined;
+    if (isIslandLoader(entry)) {
+      const mod = (await (entry as IslandLoader).load()) as IslandComponent | { default?: unknown };
+      Component = typeof mod === "function" ? (mod as IslandComponent) : (mod as { default?: unknown }).default as IslandComponent | undefined;
+    } else if (typeof entry === "function") {
+      if (isAsyncFunction(entry)) {
+        const mod = (await (entry as () => Promise<unknown>)()) as IslandComponent | { default?: unknown };
+        Component = typeof mod === "function" ? (mod as IslandComponent) : (mod as { default?: unknown }).default as IslandComponent | undefined;
       } else {
-        // Direct component: re-call with props (the no-arg call above was
-        // a probe; the real call needs the props).
-        resolved = entry;
+        Component = entry as IslandComponent;
       }
-    } else {
-      resolved = entry;
     }
-
-    const Component = resolved as IslandComponent | undefined;
 
     if (typeof Component !== "function") {
       console.warn(`[nix-js-kit] Island "${marker.name}" did not resolve to a component function`);

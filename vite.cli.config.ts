@@ -27,7 +27,7 @@ export default defineConfig({
         },
 
         rollupOptions: {
-            external: ["@deijose/nix-js", "happy-dom"],
+            external: [/^@deijose\/nix-js(?:\/.*)?$/, "happy-dom"],
             output: {
                 codeSplitting: false,
             },

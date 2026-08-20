@@ -175,3 +175,30 @@ function escapeAttr(value: string): string {
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;");
 }
+
+export {
+  processImageBatch,
+  readManifest,
+  writeManifest,
+  getManifestEntry,
+  buildSrcset,
+  buildPictureMarkup,
+  validateManifestUrls,
+  isSharpAvailable,
+  getImage,
+  createImageService,
+  transformHash,
+} from "./service.js";
+export type {
+  ImageManifest,
+  ImageEntry,
+  ImageVariant,
+  ProcessOptions,
+  ProcessResult,
+  ImageRequest,
+  ImageMetadata,
+  GeneratedImage,
+  ImageService,
+  ImageServiceCapabilities,
+  ImageServiceContext,
+} from "./service.js";

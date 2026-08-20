@@ -31,7 +31,7 @@ async function loadMarked(): Promise<MarkedModule> {
   // Try to import `marked` from the user's project.
   try {
     // @ts-ignore — `marked` is an optional peer dependency.
-    const mod = await import("marked");
+    const mod = (await import("marked")) as unknown as { marked?: (src: string) => string; default?: (src: string) => string };
     const fn = (typeof mod.marked === "function" ? mod.marked : mod.default) as (src: string) => string;
     const wrapped = { marked: fn };
     markedLoader = async () => wrapped;

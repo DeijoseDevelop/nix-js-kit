@@ -1,20 +1,18 @@
-import { readFile, stat } from "node:fs/promises";
+import { stat } from "node:fs/promises";
 import { createServer } from "node:http";
-import { extname, join, resolve, relative } from "node:path";
+import { join, resolve, relative } from "node:path";
 import { existsSync, watch } from "node:fs";
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { build, type BuildConfig } from "./build/build.js";
 import { transformProjectFiles, transformedAppDir as transformedAppDirOf } from "./build/transform-source.js";
 import { createSsrServer } from "./ssr/server.js";
-import { scanActions, actionNames } from "./action/scan.js";
+import { scanActions } from "./action/scan.js";
 import { scanRoutes } from "./router/route-scanner.js";
-import { matchRoute, matchApiRoute } from "./ssr/match.js";
-import { handleActionRequest } from "./action/server.js";
 import { incomingMessageToRequest } from "./runtime/node-http.js";
-import { resolveStaticFile } from "./runtime/static.js";
 import { loadNixConfig, type ResolvedNixConfig } from "./config/index.js";
 import { createAppManifest, writeAppManifest, writeRouteTypes } from "./manifest/index.js";
+import { validateCapabilities } from "./runtime/capabilities.js";
 
 // =============================================================================
 // --- CLI ---
@@ -557,187 +555,43 @@ async function handleRequest(
   routes: import("./router/route-scanner.js").ScannedRoutes,
   noCache = false,
 ): Promise<void> {
-  const publicActions = actionNames(actions);
+  // Unified pipeline: actions, render endpoint, API routes, static files and
+  // dynamic SSR all run through `createWebHandler`, the same code used by the
+  // Node/Bun/Vercel/Netlify adapters. This eliminates the duplicated request
+  // handling that previously diverged between dev/preview/start and adapters
+  // (audit §8.1, Risk 1).
+  const { createWebHandler } = await import("./runtime/handler.js");
+  const securityHeaders = (options.resolvedConfig as { security?: { headers?: unknown } } | undefined)?.security?.headers;
+  const webHandler = createWebHandler(
+    routes,
+    actions,
+    {
+      staticRoot: options.outDir,
+      noCache,
+      cacheDir: options.cacheDir,
+      defaultRevalidate: options.defaultRevalidate,
+      lang: options.lang,
+      clientEntry: options.clientEntry,
+      renderEndpoint: true,
+      securityHeaders: securityHeaders === undefined ? false : (securityHeaders as never),
+    },
+  );
 
-  const cacheHeaders = (base: Record<string, string>): Record<string, string> =>
-    noCache ? { ...base, "Cache-Control": "no-store, must-revalidate" } : base;
-  let urlPath = req.url ?? "/";
-  if (urlPath.includes("?")) urlPath = urlPath.split("?")[0];
-
-  // Server actions endpoint.
-  if (urlPath === "/__nix-js/actions" && req.method === "POST") {
-    try {
-      const body = await readRequestBody(req);
-      const request = incomingMessageToRequest(req, body);
-      const response = await handleActionRequest(request, createActionResolver(actions, routes));
-      res.writeHead(response.status, Object.fromEntries(response.headers.entries()));
-      res.end(await response.text());
-    } catch (err) {
-      console.error("[nix-js-kit] action error:", err);
-      res.writeHead(500, cacheHeaders({ "Content-Type": "text/plain; charset=utf-8" }));
-      res.end(String(err));
-    }
-    return;
-  }
-
-  // Render endpoint used by the client-side router for SPA navigation.
-  if (urlPath === "/__nix-js/render") {
-    const { renderPageBody, RouteNotFoundError } = await import("./ssr/stream.js");
-    try {
-      const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`);
-      const page = url.searchParams.get("page") ?? "/";
-      const search = url.searchParams.get("search") ?? "";
-      const wantsJson = (req.headers["accept"] ?? "").includes("application/json");
-      const request = incomingMessageToRequest(req);
-      const { body, title } = await renderPageBody({
-        routes,
-        pathname: page,
-        searchParams: new URLSearchParams(search),
-        config: { lang: options.lang, clientEntry: options.clientEntry },
-        actions: publicActions,
-        request,
-      });
-      if (wantsJson) {
-        res.writeHead(200, cacheHeaders({ "Content-Type": "application/json; charset=utf-8" }));
-        res.end(JSON.stringify({ title, body }));
-      } else {
-        res.writeHead(200, cacheHeaders({ "Content-Type": "text/html; charset=utf-8" }));
-        res.end(body);
-      }
-    } catch (err) {
-      if (err instanceof RouteNotFoundError) {
-        res.writeHead(404, cacheHeaders({ "Content-Type": "text/plain; charset=utf-8" }));
-        res.end("Not Found");
-        return;
-      }
-      console.error("[nix-js-kit] render endpoint error:", err);
-      res.writeHead(500, cacheHeaders({ "Content-Type": "text/plain; charset=utf-8" }));
-      res.end(String(err));
-    }
-    return;
-  }
-
-  // API routes.
-  const apiMatch = matchApiRoute(urlPath, routes.api);
-  if (apiMatch) {
-    try {
-      const mod = (await import(apiMatch.route.routePath)) as Record<
-        string,
-        (request: Request, context?: { params: Record<string, string | string[]> }) => unknown
-      >;
-      const handler = mod[req.method ?? "GET"];
-      if (typeof handler !== "function") {
-        res.writeHead(405, cacheHeaders({ "Content-Type": "text/plain" }));
-        res.end(`Method not allowed: ${req.method}`);
-        return;
-      }
-      const body = req.method && req.method !== "GET" && req.method !== "HEAD" ? await readRequestBody(req) : undefined;
-      const request = incomingMessageToRequest(req, body);
-      const response = (await handler(request, { params: apiMatch.params })) as Response;
-      res.writeHead(response.status, Object.fromEntries(response.headers.entries()));
-      res.end(Buffer.from(await response.arrayBuffer()));
-    } catch (err) {
-      console.error("[nix-js-kit] API route error:", err);
-      res.writeHead(500, { "Content-Type": "text/plain; charset=utf-8" });
-      res.end(String(err));
-    }
-    return;
-  }
-
-  const originalPath = urlPath;
-  const filePath = await resolveStaticFile(options.outDir, urlPath);
-  if (filePath) {
-    try {
-      const data = await readFile(filePath);
-      const contentType = guessContentType(filePath);
-      if (noCache && contentType.includes("text/html")) {
-        // Dev mode: strip the render-endpoint marker so the client router uses
-        // the (live) `/__nix-js/render` endpoint for fast SPA navigation.
-        const stripped = data
-          .toString("utf8")
-          .replace('<meta name="nix-js:render-endpoint" content="off" />', "");
-        res.writeHead(200, cacheHeaders({ "Content-Type": contentType }));
-        res.end(stripped);
-        return;
-      }
-      res.writeHead(200, cacheHeaders({ "Content-Type": contentType }));
-      res.end(data);
-      return;
-    } catch (err) {
-      res.writeHead(500, cacheHeaders({ "Content-Type": "text/plain; charset=utf-8" }));
-      res.end(String(err));
-      return;
-    }
-  }
-
-  // Fallback: try to render the route dynamically (e.g. for slugs not generated as static files).
-  const { renderPage, renderErrorPage } = await import("./ssr/render.js");
+  const body = req.method && req.method !== "GET" && req.method !== "HEAD"
+    ? await readRequestBody(req)
+    : undefined;
+  const request = incomingMessageToRequest(req, body);
+  let response: Response;
   try {
-    const match = matchRoute(originalPath, routes.pages);
-    if (!match) {
-      const errorResult = await renderErrorPage({
-        routes,
-        status: 404,
-        config: { lang: options.lang, clientEntry: options.clientEntry },
-        actions: publicActions,
-      });
-      if (errorResult) {
-        res.writeHead(errorResult.status, cacheHeaders({ "Content-Type": "text/html; charset=utf-8" }));
-        res.end(errorResult.html);
-        return;
-      }
-      res.writeHead(404, cacheHeaders({ "Content-Type": "text/plain; charset=utf-8" }));
-      res.end(`Not found: ${req.url}`);
-      return;
-    }
-    const result = await renderPage({
-      route: match.route,
-      params: match.params,
-      searchParams: new URLSearchParams(req.url?.split("?")[1] ?? ""),
-      config: { lang: options.lang, clientEntry: options.clientEntry },
-      actions: publicActions,
-      request: incomingMessageToRequest(req),
-    });
-    res.writeHead(200, cacheHeaders({ "Content-Type": "text/html; charset=utf-8" }));
-    res.end(result.html);
+    response = await webHandler(request);
   } catch (err) {
-    console.error("[nix-js-kit] preview fallback render error:", err);
-    const errorResult = await renderErrorPage({
-      routes,
-      status: 500,
-      config: { lang: options.lang, clientEntry: options.clientEntry },
-      actions: publicActions,
-    }).catch(() => undefined);
-    if (errorResult) {
-      res.writeHead(errorResult.status, cacheHeaders({ "Content-Type": "text/html; charset=utf-8" }));
-      res.end(errorResult.html);
-      return;
-    }
-    res.writeHead(500, cacheHeaders({ "Content-Type": "text/plain; charset=utf-8" }));
-    res.end(String(err));
+    console.error("[nix-js-kit] request error:", err);
+    res.writeHead(500, { "Content-Type": "text/plain; charset=utf-8" });
+    res.end("Internal Server Error");
+    return;
   }
-}
-
-function createActionResolver(
-  actions: import("./action/scan.js").ActionRegistry,
-  routes: import("./router/route-scanner.js").ScannedRoutes,
-) {
-  return async (name: string, page?: string) => {
-    const pageKey = page
-      ? routes.pages.some((route) => route.path === page)
-        ? page
-        : (matchRoute(page, routes.pages)?.route.path ?? page)
-      : undefined;
-    const pageActions = pageKey ? actions[pageKey] : Object.values(actions).find((p) => p[name]) ?? undefined;
-    const actionPath = pageActions ? pageActions[name] : undefined;
-    if (!actionPath) return undefined;
-    const mod = (await import(actionPath)) as Record<string, unknown>;
-    const action = mod[name];
-    if (typeof action === "function") {
-      return action as (...args: unknown[]) => unknown;
-    }
-    return undefined;
-  };
+  res.writeHead(response.status, Object.fromEntries(response.headers.entries()));
+  res.end(Buffer.from(await response.arrayBuffer()));
 }
 
 function readRequestBody(req: import("node:http").IncomingMessage): Promise<string> {
@@ -752,41 +606,6 @@ function readRequestBody(req: import("node:http").IncomingMessage): Promise<stri
   });
 }
 
-function guessContentType(filePath: string): string {
-  switch (extname(filePath)) {
-    case ".html":
-      return "text/html; charset=utf-8";
-    case ".js":
-    case ".mjs":
-      return "application/javascript; charset=utf-8";
-    case ".css":
-      return "text/css; charset=utf-8";
-    case ".json":
-      return "application/json; charset=utf-8";
-    case ".svg":
-      return "image/svg+xml";
-    case ".png":
-      return "image/png";
-    case ".jpg":
-    case ".jpeg":
-      return "image/jpeg";
-    case ".webp":
-      return "image/webp";
-    case ".avif":
-      return "image/avif";
-    case ".ico":
-      return "image/x-icon";
-    case ".woff":
-      return "font/woff";
-    case ".woff2":
-      return "font/woff2";
-    case ".wasm":
-      return "application/wasm";
-    default:
-      return "application/octet-stream";
-  }
-}
-
 async function doAdapter(options: CliOptions): Promise<void> {
   const adapterOptions = {
     root: options.root,
@@ -798,22 +617,46 @@ async function doAdapter(options: CliOptions): Promise<void> {
     lang: options.lang,
     hydrateImport: options.hydrateImport,
   };
-  if (options.adapterName === "vercel") {
+  const resolvedConfig = options.resolvedConfig as { images?: { strict?: boolean }; cache?: { defaultRevalidate?: number } } | undefined;
+  const features = {
+    isr: typeof resolvedConfig?.cache?.defaultRevalidate === "number" && resolvedConfig.cache.defaultRevalidate > 0,
+    images: resolvedConfig?.images?.strict === true,
+  };
+  let adapterName = options.adapterName;
+  if (adapterName === "vercel") {
     const { vercelAdapter } = await import("./adapters/vercel.js");
+    assertCapabilities(vercelAdapter, features, adapterName);
     await vercelAdapter.build(adapterOptions);
     console.log("\n  → Vercel output generated at .vercel/output");
-  } else if (options.adapterName === "netlify") {
+  } else if (adapterName === "netlify") {
     const { netlifyAdapter } = await import("./adapters/netlify.js");
+    assertCapabilities(netlifyAdapter, features, adapterName);
     await netlifyAdapter.build(adapterOptions);
     console.log("\n  → Netlify output generated at netlify/functions/__nix-js-kit.mjs");
-  } else if (options.adapterName === "bun") {
+  } else if (adapterName === "bun") {
     const { bunAdapter } = await import("./adapters/bun.js");
+    assertCapabilities(bunAdapter, features, adapterName);
     await bunAdapter.build(adapterOptions);
     console.log("\n  → Bun server generated at .nix-js/bun-server.ts");
-  } else if (options.adapterName === "node") {
+  } else if (adapterName === "node") {
     const { nodeAdapter } = await import("./adapters/node.js");
+    assertCapabilities(nodeAdapter, features, adapterName);
     await nodeAdapter.build(adapterOptions);
     console.log("\n  → Node server generated at .nix-js/node-server.mjs");
+  }
+}
+
+function assertCapabilities(
+  adapter: { capabilities?: import("./runtime/capabilities.js").AdapterCapabilities },
+  features: { isr: boolean; images: boolean },
+  adapterName: string,
+): void {
+  if (!adapter.capabilities) return;
+  const diagnostics = validateCapabilities(adapter.capabilities, features);
+  if (!diagnostics.ok) {
+    throw new Error(
+      `[nix-js-kit] Adapter "${adapterName}" cannot satisfy the requested features:\n  - ${diagnostics.problems.join("\n  - ")}`,
+    );
   }
 }
 

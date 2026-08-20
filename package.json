@@ -1,6 +1,6 @@
 {
   "name": "@deijose/nix-js-kit",
-  "version": "2.0.1",
+  "version": "2.0.2",
   "description": "Full-stack meta-framework for Nix.js — file-based routing, SSG and islands.",
   "license": "MIT",
   "author": "Deiver Vasquez",
@@ -168,6 +168,64 @@
       "require": "./dist/lib/runtime/index.cjs"
     }
   },
+  "typesVersions": {
+    "*": {
+      "island": [
+        "./dist/lib/island/index.d.ts"
+      ],
+      "cli": [
+        "./dist/lib/cli.d.ts"
+      ],
+      "vite": [
+        "./dist/lib/vite/index.d.ts"
+      ],
+      "adapters/vercel": [
+        "./dist/lib/adapters/vercel.d.ts"
+      ],
+      "adapters/netlify": [
+        "./dist/lib/adapters/netlify.d.ts"
+      ],
+      "adapters/bun": [
+        "./dist/lib/adapters/bun.d.ts"
+      ],
+      "adapters/node": [
+        "./dist/lib/adapters/node.d.ts"
+      ],
+      "adapters": [
+        "./dist/lib/adapters/index.d.ts"
+      ],
+      "action": [
+        "./dist/lib/action/index.d.ts"
+      ],
+      "router": [
+        "./dist/lib/router/client.d.ts"
+      ],
+      "content": [
+        "./dist/lib/content/index.d.ts"
+      ],
+      "image": [
+        "./dist/lib/image/index.d.ts"
+      ],
+      "seo": [
+        "./dist/lib/seo/index.d.ts"
+      ],
+      "config": [
+        "./dist/lib/config/index.d.ts"
+      ],
+      "manifest": [
+        "./dist/lib/manifest/index.d.ts"
+      ],
+      "integrations": [
+        "./dist/lib/integrations/index.d.ts"
+      ],
+      "runtime": [
+        "./dist/lib/runtime/index.d.ts"
+      ],
+      "*": [
+        "./dist/lib/index.d.ts"
+      ]
+    }
+  },
   "files": [
     "dist/lib",
     "bin",
@@ -177,6 +235,9 @@
   ],
   "bin": {
     "nix-js-kit": "./bin/nix-js-kit.js"
+  },
+  "publishConfig": {
+    "access": "public"
   },
   "sideEffects": false,
   "engines": {
@@ -190,6 +251,8 @@
     "typecheck": "tsc --noEmit",
     "test": "node --import tsx --test test/**/*.test.ts",
     "test:watch": "node --import tsx --test --watch test/**/*.test.ts",
+    "publint": "publint",
+    "check:types": "attw --pack .",
     "build": "npm run build:lib",
     "build:lib": "vite build --config vite.lib.config.ts && vite build --config vite.cli.config.ts && tsc --project tsconfig.lib.json && node scripts/copy-dcts.mjs && terser dist/lib/index.js -c -m -o dist/lib/index.js && terser dist/lib/index.cjs -c -m -o dist/lib/index.cjs && terser dist/lib/island/index.js -c -m -o dist/lib/island/index.js && terser dist/lib/island/index.cjs -c -m -o dist/lib/island/index.cjs",
     "prepack": "npm run build:lib"

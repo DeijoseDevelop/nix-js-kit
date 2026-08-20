@@ -4,6 +4,7 @@ import { build } from "vite";
 import { scanRoutes } from "../router/route-scanner.js";
 import type { Adapter } from "./index.js";
 import { writeSsrEntry } from "./shared.js";
+import { DEFAULT_CAPABILITIES } from "../runtime/capabilities.js";
 
 /**
  * Node adapter for nix-js-kit.
@@ -18,6 +19,7 @@ import { writeSsrEntry } from "./shared.js";
  */
 export const nodeAdapter: Adapter = {
   name: "node",
+  capabilities: DEFAULT_CAPABILITIES,
 
   async build(options) {
     const root = resolve(options.root);

@@ -26,4 +26,6 @@ export interface AdapterOptions {
 export interface Adapter {
   name: string;
   build(options: AdapterOptions): Promise<void>;
+  /** Declared host capabilities used for build-time diagnostics (§8.5). */
+  capabilities?: import("../runtime/capabilities.js").AdapterCapabilities;
 }

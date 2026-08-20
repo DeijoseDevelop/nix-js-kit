@@ -40,3 +40,17 @@ export {
   applySecurityHeaders,
   DEFAULT_SECURITY_HEADERS,
 } from "./security-headers.js";
+export {
+  DEFAULT_CAPABILITIES,
+  SERVERLESS_CAPABILITIES,
+  EDGE_CAPABILITIES,
+  createCapabilities,
+  supportsStreaming,
+  supportsPersistentStorage,
+  supportsWritableFilesystem,
+  validateCapabilities,
+  type AdapterCapabilities,
+  type FilesystemCapability,
+  type CapabilityOptions,
+  type CapabilityDiagnostics,
+} from "./capabilities.js";

@@ -344,15 +344,20 @@ import { createHash } from "node:crypto";
 import { resolveStaticFile } from "./static.js";
 
 /**
- * Serves a static file from the root directory with conditional request
- * support: ETag, Last-Modified, If-None-Match, If-Modified-Since.
+ * Serves a static file from the root directory with full conditional and
+ * range support:
+ *
+ * - ETag / Last-Modified with If-None-Match / If-Modified-Since → 304.
+ * - `Range` with `If-Range` (ETag or date) → 206 with `Content-Range`.
+ * - HEAD → same headers as GET without a body.
+ * - Invalid/unsatisfiable ranges → 416 with a `Content-Range: bytes (asterisk)/size` header.
  *
  * Files with content hashes in their names (e.g. `app-abc123.js`) get
  * `Cache-Control: public, max-age=31536000, immutable`.
  *
  * @param root Static file root (absolute path).
  * @param pathname Request pathname.
- * @param request Optional request for conditional GET handling.
+ * @param request Optional request for conditional/range/HEAD handling.
  */
 export async function serveStaticFile(
   root: string,
@@ -370,47 +375,108 @@ export async function serveStaticFile(
     const contentType = guessContentType(filePath);
     const etag = `"${createHash("sha1").update(data).digest("hex").slice(0, 16)}"`;
     const lastModified = stats.mtime.toUTCString();
+    const isHead = request?.method === "HEAD";
+    const size = data.byteLength;
 
-    // Check If-None-Match (ETag).
-    const ifNoneMatch = request?.headers.get("If-None-Match");
-    if (ifNoneMatch && ifNoneMatch === etag) {
-      return new Response(null, {
-        status: 304,
-        headers: { ETag: etag, "Last-Modified": lastModified },
-      });
-    }
-
-    // Check If-Modified-Since.
-    const ifModifiedSince = request?.headers.get("If-Modified-Since");
-    if (ifModifiedSince) {
-      const since = Date.parse(ifModifiedSince);
-      if (!isNaN(since) && Math.floor(stats.mtime.getTime() / 1000) <= Math.floor(since / 1000)) {
-        return new Response(null, {
-          status: 304,
-          headers: { ETag: etag, "Last-Modified": lastModified },
-        });
-      }
-    }
+    const baseHeaders: Record<string, string> = {
+      "Content-Type": contentType,
+      "Content-Length": String(size),
+      ETag: etag,
+      "Last-Modified": lastModified,
+      "Accept-Ranges": "bytes",
+    };
 
     // Determine Cache-Control: hashed assets get immutable, others get a
     // short revalidation window.
     const baseName = filePath.split("/").pop() ?? "";
     const isHashed = /[a-f0-9]{8,}\.(js|css|woff2?|wasm|png|jpg|jpeg|webp|avif|svg)$/i.test(baseName);
-    const cacheControl = isHashed
+    baseHeaders["Cache-Control"] = isHashed
       ? "public, max-age=31536000, immutable"
       : "public, max-age=0, must-revalidate";
 
-    return new Response(data, {
-      status: 200,
-      headers: {
-        "Content-Type": contentType,
-        "Content-Length": String(data.byteLength),
-        ETag: etag,
-        "Last-Modified": lastModified,
-        "Cache-Control": cacheControl,
-      },
-    });
+    // Conditional requests (If-None-Match takes precedence).
+    const ifNoneMatch = request?.headers.get("If-None-Match");
+    if (ifNoneMatch && etagListMatches(ifNoneMatch, etag)) {
+      return new Response(null, { status: 304, headers: baseHeaders });
+    }
+    const ifModifiedSince = request?.headers.get("If-Modified-Since");
+    if (ifModifiedSince) {
+      const since = Date.parse(ifModifiedSince);
+      if (!isNaN(since) && Math.floor(stats.mtime.getTime() / 1000) <= Math.floor(since / 1000)) {
+        return new Response(null, { status: 304, headers: baseHeaders });
+      }
+    }
+
+    // Range support with If-Range validation.
+    const rangeHeader = request?.headers.get("Range");
+    const ifRange = request?.headers.get("If-Range");
+    if (rangeHeader && (!ifRange || ifRangeMatches(ifRange, etag, stats.mtime))) {
+      const range = parseRange(rangeHeader, size);
+      if (range === null) {
+        return new Response(null, {
+          status: 416,
+          headers: { ...baseHeaders, "Content-Range": `bytes */${size}` },
+        });
+      }
+      if (range) {
+        const [start, end] = range;
+        const chunk = data.subarray(start, end + 1);
+        const headers: Record<string, string> = {
+          ...baseHeaders,
+          "Content-Length": String(chunk.byteLength),
+          "Content-Range": `bytes ${start}-${end}/${size}`,
+        };
+        if (isHead) return new Response(null, { status: 206, headers });
+        return new Response(chunk, { status: 206, headers });
+      }
+    }
+
+    if (isHead) return new Response(null, { status: 200, headers: baseHeaders });
+    return new Response(data, { status: 200, headers: baseHeaders });
   } catch {
     return null;
   }
+}
+
+function etagListMatches(ifNoneMatch: string, etag: string): boolean {
+  return ifNoneMatch
+    .split(",")
+    .map((value) => value.trim())
+    .some((value) => value === "*" || value === etag);
+}
+
+function ifRangeMatches(ifRange: string, etag: string, mtime: Date): boolean {
+  if (ifRange.startsWith('"') || ifRange.startsWith("W/")) return ifRange === etag;
+  const date = Date.parse(ifRange);
+  return !isNaN(date) && Math.floor(mtime.getTime() / 1000) <= Math.floor(date / 1000);
+}
+
+/**
+ * Parses a single `Range: bytes=...` header. Returns:
+ * - `[start, end]` for a satisfiable range.
+ * - `null` when the header is malformed or unsatisfiable (→ 416).
+ * - `undefined` when the header is valid but the whole resource is requested
+ *   (e.g. `bytes=0-` for an empty file) — serve the full body.
+ */
+function parseRange(rangeHeader: string, size: number): [number, number] | null | undefined {
+  const match = /^bytes=(\d*)-(\d*)$/.exec(rangeHeader.trim());
+  if (!match) return null;
+  const startText = match[1];
+  const endText = match[2];
+
+  if (startText === "" && endText === "") return null;
+  if (startText === "") {
+    // Suffix range: last N bytes.
+    const suffix = Number(endText);
+    if (!Number.isSafeInteger(suffix) || suffix <= 0) return null;
+    const start = Math.max(0, size - suffix);
+    if (size === 0) return undefined;
+    return [start, size - 1];
+  }
+
+  const start = Number(startText);
+  if (!Number.isSafeInteger(start) || start < 0 || start >= size) return null;
+  const end = endText === "" ? size - 1 : Number(endText);
+  if (!Number.isSafeInteger(end) || end < start) return null;
+  return [start, Math.min(end, size - 1)];
 }

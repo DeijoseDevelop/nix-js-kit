@@ -170,11 +170,31 @@ describe("client router: prefetch cache", () => {
       }),
     }) as Response) as typeof fetch;
 
+    // Spy on the document.cookie setter (found by walking the prototype chain,
+    // since happy-dom defines it on an internal Document prototype). happy-dom
+    // does not reflect Max-Age=0 removals in document.cookie, so we assert the
+    // router performs the clear-cookie write instead of relying on the read.
+    let cookieWrite: string | null = null;
+    let proto: unknown = window.document;
+    let cookieDescriptor: PropertyDescriptor | undefined;
+    while (proto) {
+      const d = Object.getOwnPropertyDescriptor(proto, "cookie");
+      if (d && d.set) { cookieDescriptor = d; break; }
+      proto = Object.getPrototypeOf(proto);
+    }
+    assert.ok(cookieDescriptor, "happy-dom document.cookie setter should exist");
+    const origSet = cookieDescriptor!.set!;
+    const origGet = cookieDescriptor!.get!;
+    Object.defineProperty(window.document, "cookie", {
+      configurable: true,
+      get() { return origGet.call(this); },
+      set(value: string) { cookieWrite = value; origSet.call(this, value); },
+    });
+
     const { navigateTo } = await import("../src/router/client.ts");
     await navigateTo("/page", "", true);
 
-    // The cookie should have been set (to clear it).
-    // In happy-dom, document.cookie is writable.
-    assert.ok(!window.document.cookie.includes("__nix_js_action_error"));
+    assert.ok(cookieWrite, "router should write the clear cookie");
+    assert.ok(cookieWrite!.startsWith("__nix_js_action_error="), `expected clear cookie, got ${cookieWrite}`);
   });
 });

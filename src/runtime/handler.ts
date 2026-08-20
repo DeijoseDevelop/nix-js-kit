@@ -3,7 +3,8 @@ import { handleActionRequest, type ActionResolver } from "../action/server.js";
 import { renderPage, renderErrorPage } from "../ssr/render.js";
 import { renderPageBody, RouteNotFoundError } from "../ssr/stream.js";
 import { actionNames } from "../action/scan.js";
-import { serveStaticFile, htmlResponse, jsonResponse, notFound, methodNotAllowed, serverError } from "./context.js";
+import { serveStaticFile, htmlResponse, jsonResponse, notFound, methodNotAllowed } from "./context.js";
+import { publicErrorResponse } from "../errors.js";
 import { getCachedHtml, setCachedHtml } from "../cache.js";
 import { shouldCachePublic, type CachePolicy } from "../cache/policy.js";
 import { buildSecurityHeaders, applySecurityHeaders } from "./security-headers.js";
@@ -116,7 +117,7 @@ export function createWebHandler(
       return await handleActionRequest(request, actionResolver);
     } catch (err) {
       console.error("[nix-js-kit] action error:", err);
-      return serverError(String(err));
+      return publicErrorResponse(err, { includeDetail: noCache });
     }
   }
 
@@ -141,7 +142,7 @@ export function createWebHandler(
       // A thrown Response from a loader is a first-class response (A-22).
       if (err instanceof Response) return err;
       console.error("[nix-js-kit] render endpoint error:", err);
-      return serverError("Internal Server Error");
+      return publicErrorResponse(err, { includeDetail: noCache });
     }
   }
 
@@ -167,7 +168,7 @@ export function createWebHandler(
       return response;
     } catch (err) {
       console.error("[nix-js-kit] API route error:", err);
-      return serverError(String(err));
+      return publicErrorResponse(err, { includeDetail: noCache });
     }
   }
 
@@ -189,6 +190,26 @@ export function createWebHandler(
         status: response.status,
         headers: { ...Object.fromEntries(response.headers.entries()), "Cache-Control": "no-store, must-revalidate" },
       });
+    }
+    if (response && renderEndpoint) {
+      const ct = response.headers.get("Content-Type") ?? "";
+      if (ct.includes("text/html")) {
+        const headers = Object.fromEntries(response.headers.entries());
+        delete headers["content-length"];
+        const body = await response.text();
+        if (body.includes('nix-js:render-endpoint" content="off"')) {
+          // The SSG build baked `render-endpoint content="off"` so static
+          // deployments never probe the endpoint. This server exposes
+          // /__nix-js/render, so advertise it: SPA navigations fetch live
+          // server-rendered content instead of the stale static file.
+          const rewritten = body.replace(
+            '<meta name="nix-js:render-endpoint" content="off" />',
+            '<meta name="nix-js:render-endpoint" content="on" />',
+          );
+          return new Response(rewritten, { status: response.status, headers });
+        }
+        return new Response(body, { status: response.status, headers });
+      }
     }
     return response;
   }
@@ -253,7 +274,7 @@ export function createWebHandler(
         importer: options.importer,
       }).catch(() => undefined);
       if (errorResult) return htmlResponse(errorResult.html, errorResult.status);
-      return serverError(String(err));
+      return publicErrorResponse(err, { includeDetail: noCache });
     }
   }
 
