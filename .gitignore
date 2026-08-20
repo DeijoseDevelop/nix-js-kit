@@ -41,3 +41,7 @@ example/netlify.toml
 
 # Pack artifacts
 *.tgz
+
+# Playwright artifacts
+test-results/
+playwright-report/
