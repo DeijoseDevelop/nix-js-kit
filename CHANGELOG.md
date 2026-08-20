@@ -5,6 +5,17 @@ All notable changes to Nix.js Kit are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.3] - unreleased
+
+### Added — island HMR (Vite plugin)
+
+- The generated client entry now registers `import.meta.hot.accept` so island
+  module changes are **hot-swapped without a full page reload**: current islands
+  are disposed and re-hydrated from the updated modules (audit §10.2 / §12.2).
+- New E2E in `example/e2e/hmr.spec.ts` (Playwright + Vite plugin dev server)
+  verifies the DOM updates with `performance navigation` count unchanged.
+- Script: `npm run test:e2e:hmr`.
+
 ## [2.0.2]
 
 ### Fixed — compliance and correctness (audit §8–§10)
