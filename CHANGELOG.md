@@ -5,6 +5,13 @@ All notable changes to Nix.js Kit are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.4]
+
+### Added — recursive content collections
+
+- `getCollection()` now scans nested directories and derives nested slugs
+  (e.g. `getting-started/intro`), removing the need for manual content scanners.
+
 ## [2.0.3]
 
 ### Added — island HMR (Vite plugin)

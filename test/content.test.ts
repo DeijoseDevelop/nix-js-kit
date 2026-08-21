@@ -139,7 +139,7 @@ describe("getCollection / getEntry", () => {
     setContentRoot(contentRoot);
     clearContentCache();
     const entries = await getCollection("blog");
-    assert.equal(entries.length, 2);
+    assert.equal(entries.length, 3);
     // Sorted by date descending: hello-world (Aug 15) before second-post (Aug 10).
     assert.equal(entries[0].slug, "hello-world");
     assert.equal(entries[1].slug, "second-post");
@@ -193,5 +193,17 @@ describe("defineCollection", () => {
   it("returns the definition as-is", () => {
     const def = defineCollection({ schema: undefined });
     assert.deepEqual(def, { schema: undefined });
+  });
+});
+
+describe("getCollection recursive scanning", () => {
+  it("scans nested directories and derives nested slugs", async () => {
+    setContentRoot(contentRoot);
+    clearContentCache();
+    const entries = await getCollection("blog");
+    const deep = entries.find((e) => e.slug === "nested/deep");
+    assert.ok(deep, "nested file should have slug 'nested/deep'");
+    assert.equal((deep!.data as { title: string }).title, "Deep Post");
+    assert.equal(entries.length, 3, "should include the nested entry");
   });
 });

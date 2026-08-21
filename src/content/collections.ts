@@ -19,7 +19,7 @@
 // =============================================================================
 
 import { readdir, readFile, stat } from "node:fs/promises";
-import { join, basename, resolve } from "node:path";
+import { join, resolve } from "node:path";
 import { parseDocument } from "./frontmatter.js";
 import { renderMarkdown } from "./markdown.js";
 import { createValidator, type SchemaValidator } from "./schema.js";
@@ -140,7 +140,9 @@ export function clearContentCache(): void {
 }
 
 /**
- * Scans a collection directory and returns all entries.
+ * Scans a collection directory and returns all entries. Nested directories
+ * are scanned recursively; the slug of a nested file includes its relative
+ * sub-path (e.g. `getting-started/intro` for `getting-started/intro.md`).
  */
 async function scanCollection(
   name: string,
@@ -149,7 +151,7 @@ async function scanCollection(
 ): Promise<ContentEntry[]> {
   let files: string[];
   try {
-    files = await readdir(collectionDir);
+    files = await readdir(collectionDir, { recursive: true });
   } catch {
     return [];
   }
@@ -159,7 +161,7 @@ async function scanCollection(
 
   for (const file of mdFiles) {
     const filePath = join(collectionDir, file);
-    const slug = basename(file, ".md");
+    const slug = file.slice(0, -3).replace(/\\/g, "/");
     const source = await readFile(filePath, "utf8");
     const { data: rawData, body } = parseDocument(source);
 
