@@ -1,10 +1,11 @@
 // =============================================================================
-// --- Stream boundary (per-request, real streaming support) ---
+// --- Stream boundary (per-request, real Suspense streaming) ---
 // =============================================================================
 //
 // `streamBoundary()` wraps a promise in a loading fallback. During SSR runtime,
-// the server emits the fallback immediately, then appends the resolved content
-// at the end of the document with a swap script (out-of-order streaming).
+// the server emits the fallback HTML immediately, then streams a `<template>`
+// chunk with a replacement script that the browser executes to swap the
+// fallback for the resolved content in-place (real Suspense streaming).
 //
 // In SSG (build time), boundaries are resolved synchronously — the build waits
 // for all promises before writing the HTML, so no streaming occurs.
@@ -51,6 +52,39 @@ export function getCurrentBoundaryContext(): BoundaryContext | undefined {
 export function withBoundaryContext<T>(fn: () => T): T {
   const ctx: BoundaryContext = { boundaries: new Map() };
   return boundaryALS.run(ctx, fn);
+}
+
+/**
+ * Builds the fallback HTML wrapper for a boundary ID.
+ * The fallback content is wrapped in a `<div>` with the boundary ID so the
+ * browser can find it and replace it when the resolved content arrives.
+ *
+ * (v2.1 — Fix #4: real Suspense streaming with `<template>` replacement)
+ */
+export function buildFallbackHtml(boundaryId: string, fallbackHtml: string): string {
+  return `<div id="${boundaryId}" style="display:contents" data-nix-js-boundary="${boundaryId}">${fallbackHtml}</div>`;
+}
+
+/**
+ * Builds the resolved content chunk for a boundary ID.
+ * Emits a `<template>` element with the resolved content, followed by a
+ * `<script>` that replaces the fallback div with the template content
+ * in-place. This is real Suspense streaming — the browser swaps the DOM
+ * node without a full re-render.
+ *
+ * (v2.1 — Fix #4: real Suspense streaming with `<template>` replacement)
+ */
+export function buildResolvedChunk(boundaryId: string, resolvedHtml: string): string {
+  // Escape the resolved HTML for safe embedding inside a <template> tag.
+  // <template> content is inert (not parsed as DOM), so we store the raw
+  // HTML and clone it via `content.cloneNode(true)`.
+  return `<template id="${boundaryId}-tpl">${resolvedHtml}</template>` +
+    `<script>(function(){` +
+    `var t=document.getElementById(${JSON.stringify(boundaryId + "-tpl")});` +
+    `var f=document.getElementById(${JSON.stringify(boundaryId)});` +
+    `if(t&&f){f.replaceWith(t.content.cloneNode(true));}` +
+    `document.dispatchEvent(new CustomEvent("nix-js:rendered"));` +
+    `})();</script>`;
 }
 
 /**

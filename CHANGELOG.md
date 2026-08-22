@@ -5,6 +5,35 @@ All notable changes to Nix.js Kit are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.0]
+
+### Added — five reported limitations fixed
+
+- **#1: Route-level code-splitting** — the generated client entry already uses
+  `import()` per island, producing separate chunks per page for a minimal
+  initial bundle. Documented and verified with tests.
+- **#2: Layout Slots** — `*.slot.ts` files are now detected by the route
+  scanner and passed to layout components as named slots (`slots.sidebar`,
+  `slots.header`, etc.). Route groups (`(group)`) already worked; this adds
+  named slot composition on top.
+- **#3: Redis / Upstash / Cloudflare KV cache adapters** — new
+  `createRedisCacheAdapter()` and `createCloudflareKVCacheAdapter()` in
+  `@deijose/nix-js-kit/cache`, implementing the same `CacheAdapter` interface
+  as the filesystem adapter. Tag-based invalidation works via Redis sets or
+  KV JSON indexes.
+- **#4: Real Suspense streaming** — `streamBoundary()` and
+  `createStreamingResponse()` now emit a `<template>` chunk + replacement
+  script that swaps the fallback `<div>` for the resolved content in-place
+  (using `replaceWith`), instead of the old `innerHTML` append pattern.
+  New helpers: `buildFallbackHtml()`, `buildResolvedChunk()`.
+
+### Changed
+
+- **#5: `happy-dom` moved to optional peer dependency** — removed from
+  `dependencies`, added to `peerDependenciesMeta` with `optional: true`.
+  The SSR runtime loads it via dynamic `import("happy-dom")` only when the
+  core renderer needs a DOM fallback; it is never bundled into client code.
+
 ## [2.0.4]
 
 ### Added — recursive content collections

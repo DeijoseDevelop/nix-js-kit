@@ -20,6 +20,7 @@ import type { PageRoute } from "../router/route-scanner.js";
 import type { BuildConfig } from "../build/build.js";
 import { renderPage } from "./render.js";
 import { randomUUID } from "node:crypto";
+import { buildResolvedChunk } from "../middleware/stream-boundary.js";
 
 export interface StreamResponseOptions {
   route: PageRoute;
@@ -120,34 +121,21 @@ export async function createStreamingResponse(
         const bodyMatch = result.html.match(/<div id="app">([\s\S]*)<\/div>\s*(<script|$)/);
         const innerBody = bodyMatch ? bodyMatch[1].trim() : result.html;
 
-        // Send a swap script that replaces the loading boundary with the
-        // real content.
-        const swapScript = `<script>
-          (function() {
-            var el = document.getElementById(${JSON.stringify(boundaryId)});
-            if (el) {
-              el.innerHTML = ${JSON.stringify(innerBody)};
-              el.id = "app";
-            }
-            document.dispatchEvent(new CustomEvent("nix-js:rendered"));
-          })();
-        </script>`;
+        // Send a `<template>` chunk + replacement script that swaps the
+        // loading boundary with the real content in-place.
+        // (v2.1 — Fix #4: real Suspense streaming with `<template>` replacement)
+        const resolvedChunk = buildResolvedChunk(boundaryId, innerBody);
 
-        controller.enqueue(encoder.encode(swapScript));
+        controller.enqueue(encoder.encode(resolvedChunk));
         controller.close();
       } catch (err) {
-        // Send an error message to the boundary.
+        // Send an error message to the boundary using `<template>` replacement.
         const errorMsg = err instanceof Error ? err.message : String(err);
-        const errorScript = `<script>
-          (function() {
-            var el = document.getElementById(${JSON.stringify(boundaryId)});
-            if (el) {
-              el.innerHTML = '<div style="color:red">Render error</div>';
-            }
-            console.error(${JSON.stringify(errorMsg)});
-          })();
-        </script>`;
-        controller.enqueue(encoder.encode(errorScript));
+        const errorChunk = buildResolvedChunk(
+          boundaryId,
+          `<div style="color:red">Render error</div>`,
+        ) + `<script>console.error(${JSON.stringify(errorMsg)});</script>`;
+        controller.enqueue(encoder.encode(errorChunk));
         controller.close();
       }
     },

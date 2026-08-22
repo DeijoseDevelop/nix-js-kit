@@ -165,6 +165,26 @@ Options:
 - **`throw new Response()`** — first-class HTTP control flow from loaders and layout loaders (redirects, 404, etc.).
 - **HMAC-signed action errors** — action error cookies signed with SHA-256, rejects tampered/forged values.
 
+## What's new in v2.1
+
+- **#1: Route-level code-splitting** — the generated client entry uses `import()`
+  per island, producing separate chunks per page. Islands not on the current
+  page stay out of the initial bundle.
+- **#2: Layout Slots** — `*.slot.ts` files (e.g. `sidebar.slot.ts`,
+  `header.slot.ts`) are detected by the route scanner and passed to layout
+  components as named slots: `Layout({ children, slots: { sidebar, header } })`.
+- **#3: Redis / Cloudflare KV cache adapters** —
+  `createRedisCacheAdapter()` and `createCloudflareKVCacheAdapter()` for
+  serverless and distributed deployments. Same `CacheAdapter` interface as
+  the filesystem adapter, with tag-based invalidation.
+- **#4: Real Suspense streaming** — `streamBoundary()` now emits a
+  `<template>` chunk + replacement script that swaps the fallback `<div>`
+  for the resolved content in-place via `replaceWith`, instead of the old
+  `innerHTML` append.
+- **#5: `happy-dom` optional** — moved from `dependencies` to
+  `peerDependenciesMeta.optional`. The SSR runtime loads it via dynamic
+  `import()` only when the core renderer needs a DOM fallback.
+
 ## What's new in v2.0
 
 - **Breaking: Node >=20.19.0** — dropped Node 18 support. Vite 7/8 and the core engine require Node 20.19+.

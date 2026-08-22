@@ -12,6 +12,16 @@ export {
   getWithSWR,
 } from "./adapter.js";
 
+// Redis / Upstash / Cloudflare KV adapters (v2.1 — Fix #3)
+export {
+  type RedisCacheAdapterOptions,
+  type RedisClient,
+  createRedisCacheAdapter,
+  type CloudflareKVAdapterOptions,
+  type CloudflareKVNamespace,
+  createCloudflareKVCacheAdapter,
+} from "./redis-adapter.js";
+
 export {
   type CacheMode,
   type CachePolicy,

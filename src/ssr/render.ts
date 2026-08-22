@@ -179,13 +179,23 @@ export async function renderPage(options: RenderPageOptions): Promise<RenderPage
     return { html: "", response: layoutThrown, status: layoutThrown.status };
   }
 
+  // Load slot modules if the route has them (v2.1 — Fix #2: Layout Slots).
+  let slotTemplates: Record<string, NixTemplate> | undefined;
+  if (route.slots) {
+    slotTemplates = {};
+    for (const [slotName, slotPath] of Object.entries(route.slots)) {
+      const slotMod = await importer(slotPath) as { default: (props: PageProps<unknown>) => NixTemplate };
+      slotTemplates[slotName] = slotMod.default(props);
+    }
+  }
+
   const body = await renderToString(() => {
     let template = PageComponent(props);
     for (let i = layoutModules.length - 1; i >= 0; i--) {
       const { default: Layout } = layoutModules[i] as {
-        default: (props: { children: NixTemplate; data?: unknown }) => NixTemplate;
+        default: (props: { children: NixTemplate; data?: unknown; slots?: Record<string, NixTemplate> }) => NixTemplate;
       };
-      template = Layout({ children: template, data: layoutDataList[i] });
+      template = Layout({ children: template, data: layoutDataList[i], slots: slotTemplates });
     }
     return template;
   });

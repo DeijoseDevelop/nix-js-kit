@@ -41,6 +41,12 @@ export interface PageRoute {
   params: string[];
   /** Whether the route has an optional catch-all segment. */
   optionalCatchAll?: boolean;
+  /**
+   * Named slot modules discovered in the same directory as the page.
+   * Keyed by slot name (filename without `.slot.ts` suffix).
+   * (v2.1 — Fix #2: Layout Slots)
+   */
+  slots?: Record<string, string>;
 }
 
 /** An API route discovered by the scanner. */
@@ -165,6 +171,14 @@ async function scanRecursive(
 
   if (pagePath) {
     const path = urlSegments.length === 0 ? "/" : "/" + urlSegments.join("/");
+    // Detect named slot files: *.slot.ts (v2.1 — Fix #2: Layout Slots)
+    const slots: Record<string, string> = {};
+    for (const file of files) {
+      const slotMatch = file.match(/^(.+)\.slot\.ts$/);
+      if (slotMatch) {
+        slots[slotMatch[1]] = join(currentDir, file);
+      }
+    }
     result.pages.push({
       path,
       pagePath,
@@ -174,6 +188,7 @@ async function scanRecursive(
       loadingPath,
       params: [...params],
       optionalCatchAll: hasOptionalCatchAll,
+      slots: Object.keys(slots).length > 0 ? slots : undefined,
     });
   }
 

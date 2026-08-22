@@ -1,6 +1,6 @@
 {
   "name": "@deijose/nix-js-kit",
-  "version": "2.0.4",
+  "version": "2.1.0",
   "description": "Full-stack meta-framework for Nix.js — file-based routing, SSG and islands.",
   "license": "MIT",
   "author": "Deiver Vasquez",
@@ -259,7 +259,6 @@
     "test:e2e:hmr": "playwright test --config example/playwright.config.ts"
   },
   "dependencies": {
-    "happy-dom": "^20.11.2",
     "tsx": "^4.23.12"
   },
   "peerDependencies": {
@@ -274,6 +273,9 @@
       "optional": true
     },
     "sharp": {
+      "optional": true
+    },
+    "happy-dom": {
       "optional": true
     }
   },
